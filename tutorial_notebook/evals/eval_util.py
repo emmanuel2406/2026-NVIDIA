@@ -222,6 +222,25 @@ def run_full_validation(
     return report
 
 
+def get_expected_optimal_energy(N: int, csv_path: Union[str, Path]) -> Optional[int]:
+    """Return the optimal energy for sequence length N from answers.csv, or None if not found."""
+    rows = parse_answers_csv(csv_path)
+    matches = [r for r in rows if r['N'] == N]
+    return matches[0]['E'] if matches else None
+
+
+def validate_energy_against_answers(
+    N: int, actual_E: int, csv_path: Union[str, Path], label: str = "Result"
+) -> Tuple[bool, str]:
+    """Validate actual_E against expected optimal for N. Returns (ok, message)."""
+    expected = get_expected_optimal_energy(N, csv_path)
+    if expected is None:
+        return False, f"{label}: No expected optimal for N={N} in answers.csv"
+    if actual_E == expected:
+        return True, f"{label}: Energy {actual_E} matches optimal for N={N}"
+    return False, f"{label}: Energy {actual_E} != expected optimal {expected} for N={N}"
+
+
 # ---------------------------------------------------------------------------
 # Unit tests (run with pytest or python -m pytest)
 # ---------------------------------------------------------------------------
