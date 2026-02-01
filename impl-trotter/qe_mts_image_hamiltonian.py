@@ -448,8 +448,6 @@ def sample_quantum_population(N: int, n_shots: int, trotter_steps: int,
     Returns:
         Tuple of (population list, quantum metrics dict)
     """
-    start_time = time.time()
-
     if N < 3:
         raise ValueError("sample_quantum_population requires N >= 3")
 
@@ -484,6 +482,16 @@ def sample_quantum_population(N: int, n_shots: int, trotter_steps: int,
             t1_flat, t2_flat, t3_flat, t4_flat,
             lambda_sched.tolist(), lambda_dot_sched.tolist(), dt))
 
+    # Warmup: trigger JIT compilation so timed run excludes compilation
+    cudaq.sample(
+        dcqo_flexible_circuit_v2,
+        num_qubits_circuit, trotter_steps,
+        t1_flat, t2_flat, t3_flat, t4_flat,
+        lambda_sched.tolist(), lambda_dot_sched.tolist(), dt,
+        shots_count=1
+    )
+
+    start_time = time.time()
     circuit_start = time.time()
 
     result = cudaq.sample(
@@ -557,8 +565,6 @@ def sample_quantum_population_opt_labs(N: int, n_shots: int, trotter_steps: int,
     Returns:
         Tuple of (population list, quantum metrics dict)
     """
-    start_time = time.time()
-
     if N < 3:
         raise ValueError("sample_quantum_population requires N >= 3")
 
@@ -593,6 +599,16 @@ def sample_quantum_population_opt_labs(N: int, n_shots: int, trotter_steps: int,
             t1_flat, t2_flat, t3_flat, t4_flat,
             lambda_sched.tolist(), lambda_dot_sched.tolist(), dt))
 
+    # Warmup: trigger JIT compilation so timed run excludes compilation
+    cudaq.sample(
+        dcqo_flexible_circuit_v2,
+        num_qubits_circuit, trotter_steps,
+        t1_flat, t2_flat, t3_flat, t4_flat,
+        lambda_sched.tolist(), lambda_dot_sched.tolist(), dt,
+        shots_count=1
+    )
+
+    start_time = time.time()
     circuit_start = time.time()
 
     result = cudaq.sample(
@@ -667,8 +683,6 @@ def sample_quantum_population_labs(N: int, n_shots: int, trotter_steps: int,
     Returns:
         Tuple of (population list, quantum metrics dict)
     """
-    start_time = time.time()
-
     if verbose:
         print(f"[QUANTUM-LABS] Preparing circuit: N={N}, shots={n_shots}, steps={trotter_steps}, T={total_time}")
 
@@ -689,6 +703,16 @@ def sample_quantum_population_labs(N: int, n_shots: int, trotter_steps: int,
     lambda_sched = np.sin((np.pi / 2) * (t_points / total_time))**2
     lambda_dot_sched = (np.pi / total_time) * np.sin(np.pi * t_points / total_time) / 2.0
 
+    # Warmup: trigger JIT compilation so timed run excludes compilation
+    cudaq.sample(
+        dcqo_flexible_circuit_v2,
+        N, trotter_steps,
+        t1_flat, t2_flat, t3_flat, t4_flat,
+        lambda_sched.tolist(), lambda_dot_sched.tolist(), dt,
+        shots_count=1
+    )
+
+    start_time = time.time()
     circuit_start = time.time()
 
     result = cudaq.sample(
@@ -1521,7 +1545,7 @@ def run_convergence_experiment_multi_n(
     if verbose:
         print(f"\n[OUTPUT] Convergence CSV saved to: {csv_path}")
 
-    # Plot: one subplot per N, Energy vs Iteration, two lines (Quantum vs Random)
+    # Plot 1: Two line graphs — one for Quantum Seed, one for Random Seed (per N in subplots)
     n_plots = len(n_values)
     n_cols = min(3, n_plots)
     n_rows = (n_plots + n_cols - 1) // n_cols
@@ -1533,22 +1557,57 @@ def run_convergence_experiment_multi_n(
         ax = axes[idx]
         N_str = str(N)
         for label, iters, energies in data[N_str]:
-            color = "C1" if "Quantum" in label else "C0"
-            ax.plot(iters, energies, label=label, color=color, alpha=0.8)
+            is_quantum = "Quantum" in label
+            ax.plot(
+                iters, energies,
+                label=label,
+                color="C1" if is_quantum else "C0",
+                linestyle="-",
+                linewidth=2,
+                alpha=0.9,
+            )
         ax.set_xlabel("Iteration")
         ax.set_ylabel("Best Energy")
         ax.set_title(f"N = {N}")
-        ax.legend()
+        ax.legend(loc="upper right", fontsize=9)
         ax.grid(True, alpha=0.3)
     for j in range(len(n_values), len(axes)):
         axes[j].set_visible(False)
-    plt.suptitle("Convergence: Energy vs Iteration — Quantum Seed vs Random Seed", fontsize=12)
+    plt.suptitle("Convergence rate: Energy vs Iteration — Quantum Seed vs Random Seed", fontsize=12)
     plt.tight_layout()
     plot_path = output_dir / "qe_mts_convergence_multi_n.png"
     plt.savefig(plot_path, dpi=150, bbox_inches="tight")
     plt.close()
     if verbose:
         print(f"[OUTPUT] Convergence plot saved to: {plot_path}")
+
+    # Plot 2: Two panels — left = Random Seed convergence, right = Quantum Seed convergence (one line per N)
+    fig2, (ax_random, ax_quantum) = plt.subplots(1, 2, figsize=(12, 5))
+    colors = plt.cm.tab10(np.linspace(0, 1, len(n_values)))
+    for idx, N in enumerate(n_values):
+        N_str = str(N)
+        for label, iters, energies in data[N_str]:
+            if "Random" in label:
+                ax_random.plot(iters, energies, label=f"N={N}", color=colors[idx], linewidth=1.5, alpha=0.9)
+            else:
+                ax_quantum.plot(iters, energies, label=f"N={N}", color=colors[idx], linewidth=1.5, alpha=0.9)
+    ax_random.set_xlabel("Iteration")
+    ax_random.set_ylabel("Best Energy")
+    ax_random.set_title("Convergence rate: Random Seed")
+    ax_random.legend(loc="upper right", fontsize=8)
+    ax_random.grid(True, alpha=0.3)
+    ax_quantum.set_xlabel("Iteration")
+    ax_quantum.set_ylabel("Best Energy")
+    ax_quantum.set_title("Convergence rate: Quantum Seed")
+    ax_quantum.legend(loc="upper right", fontsize=8)
+    ax_quantum.grid(True, alpha=0.3)
+    plt.suptitle("Convergence rate (Energy vs Iteration)", fontsize=12)
+    plt.tight_layout()
+    plot_path_two = output_dir / "qe_mts_convergence_two_linegraphs.png"
+    plt.savefig(plot_path_two, dpi=150, bbox_inches="tight")
+    plt.close()
+    if verbose:
+        print(f"[OUTPUT] Two line-graph plot saved to: {plot_path_two}")
 
     return csv_path
 
