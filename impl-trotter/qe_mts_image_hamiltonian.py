@@ -32,9 +32,11 @@ import cudaq
 import matplotlib.pyplot as plt
 
 # Add impl-trotter and impl-mts to path for imports (main adds auxiliary_files when loaded)
+# impl-trotter must come before impl-mts so "from main import" resolves to impl-trotter/main.py
+# (which has dcqo_flexible_circuit_v2, get_image_hamiltonian, etc.), not impl-mts/main.py
 _impl_trotter_dir = Path(__file__).resolve().parent
-sys.path.insert(0, str(_impl_trotter_dir))
 sys.path.insert(0, str(_impl_trotter_dir.parent / "impl-mts"))
+sys.path.insert(0, str(_impl_trotter_dir))
 
 # Import H100-optimized MTS
 try:
