@@ -69,12 +69,12 @@ def _run_qmf(N: int) -> list[int]:
 
 
 def _run_trotter(N: int) -> list[int]:
-    """Trotter/hybrid QAOA+Grover+MTS from impl-qmf/main.py. Returns sequence only (timing via timed_run)."""
-    qmf_path = REPO_ROOT / "impl-qmf" / "main.py"
-    if not qmf_path.exists():
-        raise FileNotFoundError(f"impl-qmf/main.py not found (required for trotter method)")
+    """Trotter/counteradiabatic+MTS from impl-trotter/main.py. Returns sequence only (timing via timed_run)."""
+    trotter_path = REPO_ROOT / "impl-trotter" / "main.py"
+    if not trotter_path.exists():
+        raise FileNotFoundError(f"impl-trotter/main.py not found (required for trotter method)")
     import importlib.util
-    spec = importlib.util.spec_from_file_location("trotter_hybrid", qmf_path)
+    spec = importlib.util.spec_from_file_location("trotter_main", trotter_path)
     mod = importlib.util.module_from_spec(spec)
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
