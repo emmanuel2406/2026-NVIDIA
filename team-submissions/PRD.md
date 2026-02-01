@@ -132,16 +132,23 @@ We also reviewed the following approaches:
 
 ### Agentic Workflow
 * **Plan:** [How will you orchestrate your tools?]
-    * *Example:* "We are using Cursor as the IDE. We have created a `skills.md` file containing the CUDA-Q documentation so the agent doesn't hallucinate API calls. The QA Lead runs the tests, and if they fail, pastes the error log back into the Agent to refactor."
+    We are using a variety of IDEs, with one member using Zed + Claude Code,
+    another using Cursor, and the others using VSCode. We have created a
+    `skills.md` file containing the CUDA-Q documentation so the agent doesn't
+    hallucinate API calls. The QA Lead runs the tests, and if they fail, pastes
+    the error log back into the Agent to refactor. We're using git worktrees
+    with multiple Claude Code sessions to iterate on both approaches
+    simultaneously to maximize efficiency.
 
 ### Success Metrics
-* **Metric 1 (Approximation):** [e.g., Target Ratio > 0.9 for N=30]
-* **Metric 2 (Speedup):** [e.g., 10x speedup over the CPU-only Tutorial baseline]
-* **Metric 3 (Scale):** [e.g., Successfully run a simulation for N=40]
+* **Metric 1 (Approximation):**  Optimal solutions for up to N=25
+* **Metric 2 (Speedup):**  4x speedup over the CPU-only Tutorial baseline
+* **Metric 3 (Scale):** Successfully run a simulation for N=40
 
 ### Visualization Plan
-* **Plot 1:** [e.g., "Time-to-Solution vs. Problem Size (N)" comparing CPU vs. GPU]
-* **Plot 2:** [e.g., "Convergence Rate" (Energy vs. Iteration count) for the Quantum Seed vs. Random Seed]
+* **Plot 1:**  Time-to-Solution vs Problem Size (N) comparing CPU vs. GPU 
+* **Plot 2:**  Number of Gates vs Problem Size (N) comparing QAOA vs. Trotterization
+* **Plot 3:**  Convergence Rate (Energy vs. Iteration count) for the Quantum Seed vs. Random Seed
 
 ---
 
