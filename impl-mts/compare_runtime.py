@@ -4,11 +4,13 @@ Compare runtime of CPU MTS (main.py), single-GPU H100 (mts_h100_optimized.py),
 and multi-GPU H100s (mts_h100s_mult.py) over a range of N.
 
 Usage:
-    python compare_runtime.py [--N-min 1] [--N-max 50] [--population_size P] [--generations G] [--output PATH]
-    python compare_runtime.py --N-max 50 -o results/runtime_comparison.png
+    python compare_runtime.py [--N-min 1] [--N-max 50] [--stride S] [--population_size P] [--generations G] [--output PATH]
+    python compare_runtime.py --N-min 3 --N-max 50 --stride 2 -o results/runtime_comparison.png
 """
 
 import argparse
+import os
+import site
 import subprocess
 import sys
 import time
@@ -25,11 +27,34 @@ CONFIGS = [
     ("mts_h100s_mult.py", "Multi-GPU H100s"),
 ]
 
+# GPU scripts need LD_LIBRARY_PATH to find libcurand.so.10 (from nvidia-curand-cu12)
+GPU_SCRIPTS = {"mts_h100_optimized.py", "mts_h100s_mult.py"}
+
+
+def _env_for_script(script_name: str) -> dict:
+    """Build env so GPU scripts can load CuPy's CUDA libs (nvidia-curand, nvidia-cuda-nvrtc, etc.)."""
+    env = os.environ.copy()
+    if script_name not in GPU_SCRIPTS:
+        return env
+    lib_dirs = []
+    for sp in site.getsitepackages():
+        sp_path = Path(sp)
+        # nvidia/curand/lib (libcurand.so.10), nvidia/cu13/lib (libnvrtc.so.13), etc.
+        for rel in ("nvidia/curand/lib", "nvidia/cu13/lib"):
+            d = sp_path / rel
+            if d.is_dir():
+                lib_dirs.append(str(d))
+    if lib_dirs:
+        prev = env.get("LD_LIBRARY_PATH", "")
+        env["LD_LIBRARY_PATH"] = ":".join(lib_dirs) + (f":{prev}" if prev else "")
+    return env
+
 
 def run_and_time(script_name: str, N: int, population_size: int, max_generations: int) -> float:
     """Run a script with given args and return wall-clock time in seconds."""
     script = SCRIPT_DIR / script_name
     cmd = [sys.executable, str(script), str(N), str(population_size), str(max_generations)]
+    env = _env_for_script(script_name)
     t0 = time.perf_counter()
     result = subprocess.run(
         cmd,
@@ -37,6 +62,7 @@ def run_and_time(script_name: str, N: int, population_size: int, max_generations
         capture_output=True,
         text=True,
         timeout=3600,
+        env=env,
     )
     t1 = time.perf_counter()
     if result.returncode != 0:
@@ -62,6 +88,12 @@ def main():
         type=int,
         default=50,
         help="Maximum sequence length (default: 50)",
+    )
+    parser.add_argument(
+        "--stride",
+        type=int,
+        default=1,
+        help="Step between N values (default: 1)",
     )
     parser.add_argument(
         "--population_size",
@@ -92,14 +124,16 @@ def main():
     N_min, N_max = args.N_min, args.N_max
     if N_min > N_max:
         N_min, N_max = N_max, N_min
-    N_values = np.arange(N_min, N_max + 1, dtype=int)
+    stride = max(1, args.stride)
+    N_values = np.arange(N_min, N_max + 1, stride, dtype=int)
     pop = args.population_size
     gen = args.generations
 
     # [implementation_index][n_index] -> runtime in seconds
     runtimes = [[np.nan] * len(N_values) for _ in CONFIGS]
 
-    print(f"Comparing runtimes for N in [{N_min}, {N_max}], population_size={pop}, generations={gen}")
+    range_desc = f"N in [{N_min}, {N_max}]" + (f", stride={stride}" if stride > 1 else "")
+    print(f"Comparing runtimes for {range_desc}, population_size={pop}, generations={gen}")
     print("-" * 60)
 
     for i_n, N in enumerate(N_values):
@@ -110,7 +144,7 @@ def main():
                 runtimes[i_impl][i_n] = t
                 print(f"  {label.split()[0]}: {t:.2f}s", end="", flush=True)
             except Exception as e:
-                print(f"  {label.split()[0]}: FAIL", end="", flush=True)
+                print(f"  {label.split()[0]}: FAIL {e}", end="", flush=True)
                 runtimes[i_impl][i_n] = np.nan
         print()
 

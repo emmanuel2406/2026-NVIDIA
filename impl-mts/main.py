@@ -222,6 +222,11 @@ def combine(
 ) -> np.ndarray:
     """Single-point crossover. If fixed_indices is set, child keeps parent1's values at those indices."""
     N = len(parent1)
+    if N <= 1:
+        child = parent1.copy()
+        if verbose:
+            print("[COMBINE] N<=1, no crossover point; returning copy of parent1")
+        return child
     k = random.randint(1, N - 1)
     child = np.concatenate([parent1[:k], parent2[k:]])
     if fixed_indices:
