@@ -9,7 +9,7 @@ Methods are stubbed for now - implement real algorithms as they become available
 Usage:
     python run_benchmark.py 3 4 5 10 20
     python run_benchmark.py 3-25
-    python run_benchmark.py --classical-gpu 10 20     # include H100-optimized MTS (classical_gpu)
+    python run_benchmark.py --classical-gpu 10 20     # add classical_gpu method and use H100 MTS in trotter/qmf
 """
 
 import argparse
@@ -55,13 +55,14 @@ def timed_run(fn, *args, **kwargs) -> tuple:
 # Stubbed methods (replace with real implementations)
 # ---------------------------------------------------------------------------
 
-# Base methods (always run). classical_gpu (H100-optimized MTS) is added when --classical-gpu is set.
+# Base methods (always run). With --classical-gpu: add classical_gpu and trotter/qmf use H100 MTS.
 METHODS_BASE = ["mts", "random", "trotter", "qmf"]
 METHOD_CLASSICAL_GPU = "classical_gpu"
 
 
-def _run_qmf(N: int) -> list[int]:
-    """QAOA+Grover+MTS hybrid from impl-qmf/main.py. Returns sequence only (timing via timed_run)."""
+def _run_qmf(N: int, use_gpu_mts: bool = False) -> list[int]:
+    """QAOA+Grover+MTS hybrid from impl-qmf/main.py. Returns sequence only (timing via timed_run).
+    When use_gpu_mts=True, uses H100-optimized MTS for the classical refinement step."""
     qmf_path = REPO_ROOT / "impl-qmf" / "main.py"
     if not qmf_path.exists():
         raise FileNotFoundError(f"impl-qmf/main.py not found (required for qmf method)")
@@ -71,12 +72,13 @@ def _run_qmf(N: int) -> list[int]:
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
     spec.loader.exec_module(qmf_module)
-    seq, _ = qmf_module.run_hybrid(N, verbose=False)
+    seq, _ = qmf_module.run_hybrid(N, verbose=False, use_gpu_mts=use_gpu_mts)
     return seq
 
 
-def _run_trotter(N: int) -> list[int]:
-    """Trotter/counteradiabatic+MTS from impl-trotter/main.py. Returns sequence only (timing via timed_run)."""
+def _run_trotter(N: int, use_gpu_mts: bool = False) -> list[int]:
+    """Trotter/counteradiabatic+MTS from impl-trotter/main.py. Returns sequence only (timing via timed_run).
+    When use_gpu_mts=True, uses H100-optimized MTS for the classical refinement step."""
     trotter_path = REPO_ROOT / "impl-trotter" / "main.py"
     if not trotter_path.exists():
         raise FileNotFoundError(f"impl-trotter/main.py not found (required for trotter method)")
@@ -86,7 +88,7 @@ def _run_trotter(N: int) -> list[int]:
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
     spec.loader.exec_module(mod)
-    seq, _ = mod.run_hybrid(N, verbose=False)
+    seq, _ = mod.run_hybrid(N, verbose=False, use_gpu_mts=use_gpu_mts)
     return seq
 
 
@@ -148,16 +150,17 @@ def _run_classical_gpu(N: int) -> list[int]:
     return best_s.tolist() if hasattr(best_s, "tolist") else list(best_s)
 
 
-def run_method(method: str, N: int) -> tuple[list[int], float]:
-    """Dispatch to the appropriate method. Returns (sequence, time_sec). Timing via timed_run."""
+def run_method(method: str, N: int, use_gpu_mts: bool = False) -> tuple[list[int], float]:
+    """Dispatch to the appropriate method. Returns (sequence, time_sec). Timing via timed_run.
+    When use_gpu_mts=True, trotter and qmf use H100-optimized MTS for their classical refinement step."""
     if method == "mts":
         return timed_run(_run_mts, N)
     if method == "random":
         return timed_run(_run_random, N)
     if method == "trotter":
-        return timed_run(_run_trotter, N)
+        return timed_run(_run_trotter, N, use_gpu_mts)
     if method == "qmf":
-        return timed_run(_run_qmf, N)
+        return timed_run(_run_qmf, N, use_gpu_mts)
     if method == METHOD_CLASSICAL_GPU:
         return timed_run(_run_classical_gpu, N)
     raise ValueError(f"Unknown method: {method}")
@@ -187,8 +190,9 @@ def parse_n_values(args: list[str]) -> list[int]:
     return sorted(set(values))
 
 
-def run_benchmark(n_values: list[int], methods: list[str], results_path: Path) -> None:
-    """Run all (N, method) combinations and write results to CSV."""
+def run_benchmark(n_values: list[int], methods: list[str], results_path: Path, use_gpu_mts: bool = False) -> None:
+    """Run all (N, method) combinations and write results to CSV.
+    When use_gpu_mts=True, trotter and qmf use H100-optimized MTS for their classical refinement step."""
     rows = []
 
     for N in n_values:
@@ -196,7 +200,7 @@ def run_benchmark(n_values: list[int], methods: list[str], results_path: Path) -
 
         for method in methods:
             try:
-                seq, time_sec = run_method(method, N)
+                seq, time_sec = run_method(method, N, use_gpu_mts=use_gpu_mts)
                 energy = compute_energy(seq)
                 F_N = compute_merit_factor(seq, energy)
                 seq_rl = sequence_to_runlength(seq)
@@ -250,7 +254,7 @@ def main():
     parser.add_argument(
         "--classical-gpu",
         action="store_true",
-        help="Include H100-optimized MTS (classical_gpu) in the methods to run",
+        help="Add classical_gpu method and use H100-optimized MTS for trotter/qmf refinement",
     )
     parser.add_argument("n_values", nargs="*", default=[], help="N values, e.g. 3 4 5 10 or 3-10")
     args = parser.parse_args()
@@ -261,9 +265,12 @@ def main():
         methods.append(METHOD_CLASSICAL_GPU)
 
     results_path = SCRIPT_DIR / "results_classical_gpu.csv" if args.classical_gpu else RESULTS_CSV
+    use_gpu_mts = args.classical_gpu  # trotter and qmf use H100 MTS when --classical-gpu
     print(f"Benchmarking N = {n_values}")
     print(f"Methods: {methods}")
-    run_benchmark(n_values, methods, results_path)
+    if use_gpu_mts:
+        print("(trotter and qmf will use H100-optimized MTS for classical refinement)")
+    run_benchmark(n_values, methods, results_path, use_gpu_mts=use_gpu_mts)
 
 
 if __name__ == "__main__":

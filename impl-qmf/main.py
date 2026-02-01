@@ -218,14 +218,20 @@ def run_qaoa_plus_grover(N, p=2, num_grover_rounds=2, target_bitstring=None, sho
     return samples, best_bs, best_e, best_m, target_bitstring
 
 
-def _load_mts(repo_root: Path):
-    """Load memetic_tabu_search from impl-mts/main.py."""
+def _load_mts(repo_root: Path, use_gpu: bool = False):
+    """Load memetic_tabu_search from impl-mts/main.py or mts_h100_optimized.py when use_gpu=True."""
     import importlib.util
-    mts_path = repo_root / "impl-mts" / "main.py"
+    import sys
+    if use_gpu:
+        mts_path = repo_root / "impl-mts" / "mts_h100_optimized.py"
+    else:
+        mts_path = repo_root / "impl-mts" / "main.py"
     if not mts_path.exists():
         raise FileNotFoundError(f"MTS module not found: {mts_path}")
     spec = importlib.util.spec_from_file_location("mts_module", mts_path)
     mts_module = importlib.util.module_from_spec(spec)
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
     spec.loader.exec_module(mts_module)
     return mts_module
 
@@ -239,10 +245,12 @@ def run_hybrid(
     max_generations: int = 30,
     p_combine: float = 0.9,
     verbose: bool = False,
+    use_gpu_mts: bool = False,
 ) -> tuple:
     """
     Run QAOA+Grover+MTS hybrid. Returns (best_sequence_as_list, time_sec).
     best_sequence is list of ±1 for eval_util compatibility.
+    When use_gpu_mts=True, uses H100-optimized MTS from impl-mts/mts_h100_optimized.py.
     """
     repo_root = Path(__file__).resolve().parent.parent
     start = time.perf_counter()
@@ -260,11 +268,13 @@ def run_hybrid(
         for _ in range(count):
             quantum_population.append(seq.copy())
 
-    # Classical: MTS
-    mts_module = _load_mts(repo_root)
+    # Classical: MTS (CPU or H100-optimized when use_gpu_mts=True)
+    mts_module = _load_mts(repo_root, use_gpu=use_gpu_mts)
     memetic_tabu_search = mts_module.memetic_tabu_search
     random.seed(42)
     np.random.seed(42)
+    if use_gpu_mts and hasattr(mts_module, "cp"):
+        mts_module.cp.random.seed(42)
     best_s, best_energy, _ = memetic_tabu_search(
         N,
         population_size=population_size,

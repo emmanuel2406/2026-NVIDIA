@@ -206,11 +206,14 @@ else:
 # ---------------------------------------------------------------------------
 
 
-def _load_mts(repo_root: Path):
-    """Load memetic_tabu_search from impl-mts/main.py."""
+def _load_mts(repo_root: Path, use_gpu: bool = False):
+    """Load memetic_tabu_search from impl-mts/main.py or mts_h100_optimized.py when use_gpu=True."""
     import importlib.util
 
-    mts_path = repo_root / "impl-mts" / "main.py"
+    if use_gpu:
+        mts_path = repo_root / "impl-mts" / "mts_h100_optimized.py"
+    else:
+        mts_path = repo_root / "impl-mts" / "main.py"
     if not mts_path.exists():
         raise FileNotFoundError(f"MTS module not found: {mts_path}")
     spec = importlib.util.spec_from_file_location("mts_module", mts_path)
@@ -235,11 +238,13 @@ def run_hybrid(
     max_generations: int = 30,
     p_combine: float = 0.9,
     verbose: bool = False,
+    use_gpu_mts: bool = False,
 ) -> tuple:
     """
     Run Trotterized counteradiabatic + MTS hybrid.
     Returns (best_sequence_as_list, time_sec).
     best_sequence is list of ±1 for eval_util compatibility.
+    When use_gpu_mts=True, uses H100-optimized MTS from impl-mts/mts_h100_optimized.py.
     """
     start = time.perf_counter()
 
@@ -268,9 +273,11 @@ def run_hybrid(
         for _ in range(count):
             quantum_population.append(seq.copy())
 
-    mts_module = _load_mts(REPO_ROOT)
+    mts_module = _load_mts(REPO_ROOT, use_gpu=use_gpu_mts)
     random.seed(42)
     np.random.seed(42)
+    if use_gpu_mts and hasattr(mts_module, "cp"):
+        mts_module.cp.random.seed(42)
     best_s, best_energy, _ = mts_module.memetic_tabu_search(
         N,
         population_size=population_size,
