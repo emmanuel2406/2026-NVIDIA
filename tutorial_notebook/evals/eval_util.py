@@ -229,6 +229,23 @@ def get_expected_optimal_energy(N: int, csv_path: Union[str, Path]) -> Optional[
     return matches[0]['E'] if matches else None
 
 
+def normalized_energy_distance(best_energy: int, optimal_energy: int) -> Optional[float]:
+    """
+    Compute normalized distance from found energy to optimal energy.
+
+    Formula: (best_energy - optimal_energy) / optimal_energy
+
+    - 0.0 means perfect match
+    - Positive values mean best_energy is worse than optimal (higher energy)
+    - Negative values mean best_energy is better than optimal (unexpected)
+
+    Returns None if optimal_energy is 0 (avoids division by zero).
+    """
+    if optimal_energy == 0:
+        return None
+    return (best_energy - optimal_energy) / optimal_energy
+
+
 def validate_energy_against_answers(
     N: int, actual_E: int, csv_path: Union[str, Path], label: str = "Result"
 ) -> Tuple[bool, str]:
@@ -238,7 +255,9 @@ def validate_energy_against_answers(
         return False, f"{label}: No expected optimal for N={N} in answers.csv"
     if actual_E == expected:
         return True, f"{label}: Energy {actual_E} matches optimal for N={N}"
-    return False, f"{label}: Energy {actual_E} != expected optimal {expected} for N={N}"
+    nd = normalized_energy_distance(actual_E, expected)
+    nd_str = f", normalized distance={nd:.6f}" if nd is not None else ""
+    return False, f"{label}: Energy {actual_E} != expected optimal {expected} for N={N}{nd_str}"
 
 
 # ---------------------------------------------------------------------------
