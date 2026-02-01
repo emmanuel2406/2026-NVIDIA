@@ -38,7 +38,7 @@ along with more experimental methods.
 For the trotterization method, we chose to augment the trotterization method provided with symmetry-based exploitation and a short run of quantum minimum finding to converge even faster. This approach ensures at least a constant factor speedup over the original method (thanks to the symmetry-based exploitation) and can potentially achieve an exponential speedup over the original method by leveraging the power of quantum minimum finding. We have three primary reasons for choosing this approach:
 
 1. **Speedup:** The symmetry-based exploitation and quantum minimum finding can significantly speed up the trotterization method, ensuring at least a constant factor speedup over the original method with relative surety.
-2. **Exponential Speedup:** By leveraging Quantum Minimum Finding, we target a
+2. **Runtime Improvements:** By leveraging Quantum Minimum Finding, we target a
 reduction in the scaling base of the problem (theoretically improving from
 classical $O(1.34^N)$ to quantum $O(1.21^N)$). This provides a relative
 exponential speedup over the original method, as fewer Trotter steps are needed
@@ -99,20 +99,84 @@ We also reviewed the following approaches:
 ---
 
 ## 3. The Acceleration Strategy
-**Owner:** GPU Acceleration PIC
+*Owner:* GPU Acceleration PIC
 
 ### Quantum Acceleration (CUDA-Q)
-* **Strategy:** [How will you use the GPU for the quantum part?]
-    * *Example:* "After testing with a single L4, we will target the `nvidia-mgpu` backend to distribute the circuit simulation across multiple L4s for large $N$."
- 
+* *Strategy:* The quantum component is used to generate *high-quality candidate
+  LABS bitstrings* that seed the Memetic Tabu Search (MTS). Both of our quantum
+  approaches (trotterization-based methods and QAOA) involve repeated circuit
+  execution and sampling, making them well-suited for GPU acceleration.
 
-### Classical Acceleration (MTS)
-* **Strategy:** [The classical search has many opportuntities for GPU acceleration. What will you chose to do?]
-    * *Example:* "The standard MTS evaluates neighbors one by one. We will use `cupy` to rewrite the energy function to evaluate a batch of 1,000 neighbor flips simultaneously on the GPU."
+Rather than aiming for deep circuits, we focus on: high-throughput sampling, and
+parallel evaluation of circuit instances, allowing the classical MTS to handle
+fine-grained optimization.
+
+### Implementation
+- Use CUDA-Q with GPU-backed simulation** to accelerate short-depth trotterized
+  evolution and fixed-parameter QAOA with a contradiabatic ansatz.
+- Execute circuits in *batches* to amortize kernel launch and memory transfer overhead.
+- Run multiple parameter sets or shot batches in parallel using GPU streams.
+
+### Classical Component (MTS)
+* *Strategy:* The dominant computational bottleneck in classical MTS for LABS is
+  neighbor evaluation during local search. Evaluating candidate flips
+  sequentially is inefficient due to the global autocorrelation structure of
+  LABS.
+
+Our strategy is to batch neighbor evaluations on the GPU, turning the most
+expensive loop in MTS into a massively parallel computation.
+
+### Implementation
+- Represent LABS sequences as {−1, +1} vectors on the GPU.
+- For each MTS iteration:
+  - generate a batch of candidate moves (e.g., single-bit flips),
+  - compute changes in autocorrelation values ΔC_k and total energy ΔE for all candidates in parallel on the GPU**,
+  - return batched scores to the CPU for tabu filtering and move selection.
+- Implement the first version using CuPy for rapid development and reliability under time pressure.
+- Use incremental energy updates rather than recomputing full LABS energy from scratch.
+- Run multiple MTS individuals concurrently by batching populations on the GPU.
+
+Tabu bookkeeping and high-level control logic remain on the CPU to minimize implementation risk while still capturing the majority of the available speedup.
 
 ### Hardware Targets
-* **Dev Environment:** [e.g., Qbraid (CPU) for logic, Brev L4 for initial GPU testing]
-* **Production Environment:** [e.g., Brev A100-80GB for final N=50 benchmarks]
+*Context & time budget:* ~12 hours remaining in the hackathon. We are
+compute-bound (heavy linear algebra, many batched circuit simulations, and
+thousands of neighbor ΔE evaluations) rather than I/O-bound (small transfers,
+limited host-device synchronization). That observation drives our hardware
+allocation: we use an L4 for rapid iteration and lower-cost batched development,
+but shift most heavy compute bursts to an H100 for raw throughput.
+
+## Why Our Workflow Is Compute-Bound
+- *Trotterization:* dominated by repeated matrix exponentiation and tensor contractions.
+- *QAOA:* dominated by statevector/tensor-network simulation and repeated circuit sampling.
+Both approaches involve high arithmetic intensity, repeated linear algebra operations, batched execution with minimal data movement.
+
+As a result, performance scales primarily with *floating-point throughput and memory bandwidth*, not I/O latency.
+
+### Design Implication
+Because both components are compute-heavy:
+- faster GPUs translate almost directly into faster time-to-solution,
+- spending more time on high-throughput hardware (H100) yields meaningful gains,
+- cheaper GPUs (L4) remain ideal for *iteration and tuning*, where flexibility and hours-per-dollar matter more than peak throughput.
+
+  ## Raw cost math 
+
+*L4 (4 GPUs × 5 hours):*
+- Rate: $0.85 / hr  
+- Per-hour for 4 L4s: 4 × $0.85 = $3.40 / hr  
+
+
+*H100 (block A — 1 GPU × 1 hour):*
+- Rate: $2.55 / hr  
+- Duration: 1 hour  
+- Cost: 1 × $2.55 × 1 = $2.55
+
+*H100 (block B — 2 GPUs × 3 hours):*
+- Rate : $4.56/hr
+- Duration :3 hrs
+- total : 13.68
+
+Therefore total comes to 19.63.
 
 ---
 
