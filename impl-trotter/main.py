@@ -6,8 +6,9 @@ Ports the logic from 01_quantum_enhanced_optimization_LABS-checkpoint(1).ipynb:
 2. MTS with that distribution as initial population
 
 Usage:
-    from main import run_hybrid
+    from main import run_hybrid, run_hybrid_h100_optimized, h100_optimized
     best_seq, time_sec = run_hybrid(N, verbose=False)
+    best_seq, time_sec = run_hybrid_h100_optimized(N, verbose=False)  # GPU path
 Returns best_seq as list of ±1 for eval_util compatibility.
 """
 
@@ -291,13 +292,100 @@ def run_hybrid(
     return seq_list, elapsed
 
 
+# ---------------------------------------------------------------------------
+# H100-Optimized Entry: run_hybrid_h100_optimized
+# ---------------------------------------------------------------------------
+
+
+def run_hybrid_h100_optimized(
+    N: int,
+    T: float = 1.0,
+    n_steps: int = 1,
+    shots: int = 200,
+    population_size: int = 50,
+    max_generations: int = 30,
+    p_combine: float = 0.9,
+    verbose: bool = False,
+    nvidia_option: str = "fp32",
+) -> tuple:
+    """
+    H100-optimized Trotterized counteradiabatic + MTS hybrid.
+
+    Sets cudaq target to 'nvidia' (GPU) before sampling and uses
+    H100-optimized MTS from impl-mts/mts_h100_optimized.py.
+    Requires an NVIDIA GPU. Optional precision via nvidia_option ('fp32' or 'fp64').
+    Advanced tuning: set env vars CUDAQ_FUSION_*, CUDAQ_MAX_GPU_MEMORY_GB before run.
+
+    Returns (best_sequence_as_list, time_sec). best_sequence is list of ±1 for eval_util.
+    """
+    start = time.perf_counter()
+
+    if not _CUDAQ_AVAILABLE:
+        raise RuntimeError("cudaq required for trotter method")
+
+    cudaq.set_target("nvidia", option=nvidia_option)
+
+    import auxiliary_files.labs_utils as utils
+
+    dt = T / n_steps
+    G2, G4 = _get_interactions(N)
+    thetas = []
+    for step in range(1, n_steps + 1):
+        t_val = step * dt
+        theta_val = utils.compute_theta(t_val, dt, T, N, G2, G4)
+        thetas.append(theta_val)
+
+    quantum_result = cudaq.sample(
+        _trotterized_circuit,
+        N,
+        G2,
+        G4,
+        n_steps,
+        dt,
+        T,
+        thetas,
+        shots_count=shots,
+    )
+
+    quantum_population = []
+    for bitstring, count in quantum_result.items():
+        seq = _bitstring_to_sequence(bitstring)
+        for _ in range(count):
+            quantum_population.append(seq.copy())
+
+    mts_module = _load_mts(REPO_ROOT, use_gpu=True)
+    random.seed(42)
+    np.random.seed(42)
+    if hasattr(mts_module, "cp"):
+        mts_module.cp.random.seed(42)
+    best_s, best_energy, _ = mts_module.memetic_tabu_search(
+        N,
+        population_size=population_size,
+        max_generations=max_generations,
+        p_combine=p_combine,
+        initial_population=quantum_population[:population_size] if quantum_population else None,
+        verbose=verbose,
+    )
+    elapsed = time.perf_counter() - start
+    seq_list = best_s.tolist() if hasattr(best_s, "tolist") else list(best_s)
+    return seq_list, elapsed
+
+
+# Alias for backward compatibility and convenience.
+h100_optimized = run_hybrid_h100_optimized
+
+
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
     parser.add_argument("N", type=int, nargs="?", default=10, help="Sequence length")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+    parser.add_argument("--gpu", "--h100", dest="use_h100", action="store_true", help="Use H100-optimized path (cudaq nvidia + GPU MTS)")
     args = parser.parse_args()
-    seq, t = run_hybrid(args.N, verbose=args.verbose)
+    if args.use_h100:
+        seq, t = run_hybrid_h100_optimized(args.N, verbose=args.verbose)
+    else:
+        seq, t = run_hybrid(args.N, verbose=args.verbose)
     print(f"N={args.N} best sequence (runlength): {seq}")
     print(f"Time: {t:.4f}s")

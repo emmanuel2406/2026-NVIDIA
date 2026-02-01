@@ -287,3 +287,117 @@ def run_hybrid(
     # Return as list of int for eval_util
     seq_list = best_s.tolist() if hasattr(best_s, "tolist") else list(best_s)
     return seq_list, elapsed
+
+
+def run_hybrid_h100_optimized(
+    N: int,
+    p: int = 2,
+    num_grover_rounds: int = 2,
+    shots: int = 500,
+    population_size: int = 50,
+    max_generations: int = 30,
+    p_combine: float = 0.9,
+    verbose: bool = False,
+    use_gpu_mts: bool = True,
+) -> tuple:
+    """
+    H100-optimized QAOA+Grover+MTS: uses cudaq nvidia backend and GPU MTS.
+    Same signature and return type as run_hybrid for drop-in replacement.
+    use_gpu_mts is ignored (always True). Returns (best_sequence_as_list, time_sec).
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    start = time.perf_counter()
+
+    if not _CUDAQ_AVAILABLE:
+        raise RuntimeError("cudaq required for QAOA+Grover+MTS method")
+
+    saved_target = None
+    if hasattr(cudaq, "get_target"):
+        try:
+            saved_target = cudaq.get_target()
+        except Exception:
+            pass
+
+    try:
+        try:
+            cudaq.set_target("nvidia")
+        except Exception as e:
+            if verbose:
+                import warnings
+                warnings.warn(f"cudaq.set_target('nvidia') failed: {e}; using default backend")
+    except NameError:
+        pass
+
+    use_gpu_mts_effective = True
+    try:
+        mts_module = _load_mts(repo_root, use_gpu=True)
+    except (FileNotFoundError, ImportError) as e:
+        if verbose:
+            import warnings
+            warnings.warn(f"H100 MTS not available ({e}); falling back to CPU MTS")
+        use_gpu_mts_effective = False
+        mts_module = _load_mts(repo_root, use_gpu=False)
+
+    try:
+        samples, best_bs, best_e_q, best_m_q, target = run_qaoa_plus_grover(
+            N, p, num_grover_rounds, target_bitstring=None, shots=shots
+        )
+        quantum_population = None
+        try:
+            _qmf_h100_path = Path(__file__).resolve().parent / "qmf_h100_optimized.py"
+            if _qmf_h100_path.exists():
+                import importlib.util
+                _spec = importlib.util.spec_from_file_location(
+                    "qmf_h100_optimized", _qmf_h100_path
+                )
+                _qmf_h100 = importlib.util.module_from_spec(_spec)
+                _spec.loader.exec_module(_qmf_h100)
+                if hasattr(_qmf_h100, "build_quantum_population_and_best"):
+                    result = _qmf_h100.build_quantum_population_and_best(
+                        samples, N, population_size
+                    )
+                    if result is not None:
+                        quantum_population, _ = result
+        except Exception:
+            pass
+        if quantum_population is None:
+            quantum_population = []
+            for bs, count in samples.items():
+                seq = bitstring_to_sequence(bs)
+                for _ in range(count):
+                    quantum_population.append(seq.copy())
+
+        memetic_tabu_search = mts_module.memetic_tabu_search
+        random.seed(42)
+        np.random.seed(42)
+        if use_gpu_mts_effective and hasattr(mts_module, "cp"):
+            mts_module.cp.random.seed(42)
+        best_s, best_energy, _ = memetic_tabu_search(
+            N,
+            population_size=population_size,
+            max_generations=max_generations,
+            p_combine=p_combine,
+            initial_population=quantum_population[:population_size] if quantum_population else None,
+            verbose=verbose,
+        )
+    finally:
+        if saved_target is not None and hasattr(cudaq, "set_target"):
+            try:
+                cudaq.set_target(saved_target)
+            except Exception:
+                pass
+        elif _CUDAQ_AVAILABLE:
+            try:
+                cudaq.set_target("default")
+            except Exception:
+                try:
+                    cudaq.set_target("qpp-cpu")
+                except Exception:
+                    pass
+
+    elapsed = time.perf_counter() - start
+    seq_list = best_s.tolist() if hasattr(best_s, "tolist") else list(best_s)
+    return seq_list, elapsed
+
+
+h100_optimized = run_hybrid_h100_optimized
