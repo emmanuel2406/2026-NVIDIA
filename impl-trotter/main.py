@@ -173,12 +173,12 @@ def _define_kernels():
     @cudaq.kernel
     def trotterized_circuit(
         N: int,
-        G2: list,
-        G4: list,
+        G2: list[list[int]],
+        G4: list[list[int]],
         steps: int,
         dt: float,
         T: float,
-        thetas: list,
+        thetas: list[float],
     ):
         """Full Trotterized counteradiabatic circuit from Eq. 15."""
         reg = cudaq.qvector(N)

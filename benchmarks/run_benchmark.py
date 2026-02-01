@@ -9,8 +9,10 @@ Methods are stubbed for now - implement real algorithms as they become available
 Usage:
     python run_benchmark.py 3 4 5 10 20
     python run_benchmark.py 3-25
+    python run_benchmark.py --classical-gpu 10 20     # include H100-optimized MTS (classical_gpu)
 """
 
+import argparse
 import csv
 import random
 import sys
@@ -50,7 +52,9 @@ def timed_run(fn, *args, **kwargs) -> tuple:
 # Stubbed methods (replace with real implementations)
 # ---------------------------------------------------------------------------
 
-METHODS = ["mts", "random", "trotter", "qmf"]
+# Base methods (always run). classical_gpu (H100-optimized MTS) is added when --classical-gpu is set.
+METHODS_BASE = ["mts", "random", "trotter", "qmf"]
+METHOD_CLASSICAL_GPU = "classical_gpu"
 
 
 def _run_qmf(N: int) -> list[int]:
@@ -114,6 +118,33 @@ def _run_random(N: int) -> list[int]:
     return [random.choice([-1, 1]) for _ in range(N)]
 
 
+def _run_classical_gpu(N: int) -> list[int]:
+    """H100-optimized MTS from impl-mts/mts_h100_optimized.py. Returns sequence only (timing via timed_run)."""
+    h100_path = REPO_ROOT / "impl-mts" / "mts_h100_optimized.py"
+    if not h100_path.exists():
+        raise FileNotFoundError(f"impl-mts/mts_h100_optimized.py not found (required for classical_gpu method)")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("mts_h100", h100_path)
+    h100_module = importlib.util.module_from_spec(spec)
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    spec.loader.exec_module(h100_module)
+    random.seed(42)
+    if hasattr(h100_module, "np"):
+        h100_module.np.random.seed(42)
+    if hasattr(h100_module, "cp"):
+        h100_module.cp.random.seed(42)
+    best_s, _best_energy, _population = h100_module.memetic_tabu_search(
+        N=N,
+        population_size=50,
+        max_generations=100,
+        p_combine=0.9,
+        initial_population=None,
+        verbose=False,
+    )
+    return best_s.tolist() if hasattr(best_s, "tolist") else list(best_s)
+
+
 def run_method(method: str, N: int) -> tuple[list[int], float]:
     """Dispatch to the appropriate method. Returns (sequence, time_sec). Timing via timed_run."""
     if method == "mts":
@@ -124,6 +155,8 @@ def run_method(method: str, N: int) -> tuple[list[int], float]:
         return timed_run(_run_trotter, N)
     if method == "qmf":
         return timed_run(_run_qmf, N)
+    if method == METHOD_CLASSICAL_GPU:
+        return timed_run(_run_classical_gpu, N)
     raise ValueError(f"Unknown method: {method}")
 
 
@@ -202,10 +235,28 @@ def run_benchmark(n_values: list[int], methods: list[str], results_path: Path) -
 
 
 def main():
-    n_values = parse_n_values(sys.argv[1:])
+    parser = argparse.ArgumentParser(
+        description="LABS Benchmark Runner",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="Example: python run_benchmark.py --classical-gpu 10 20",
+    )
+    parser.add_argument(
+        "--classical-gpu",
+        action="store_true",
+        help="Include H100-optimized MTS (classical_gpu) in the methods to run",
+    )
+    parser.add_argument("n_values", nargs="*", default=[], help="N values, e.g. 3 4 5 10 or 3-10")
+    args = parser.parse_args()
+
+    n_values = parse_n_values(args.n_values)
+    methods = list(METHODS_BASE)
+    if args.classical_gpu:
+        methods.append(METHOD_CLASSICAL_GPU)
+
+    results_path = SCRIPT_DIR / "results_classical_gpu.csv" if args.classical_gpu else RESULTS_CSV
     print(f"Benchmarking N = {n_values}")
-    print(f"Methods: {METHODS}")
-    run_benchmark(n_values, METHODS, RESULTS_CSV)
+    print(f"Methods: {methods}")
+    run_benchmark(n_values, methods, results_path)
 
 
 if __name__ == "__main__":

@@ -90,7 +90,7 @@ def _define_kernels():
         h(qubits)
 
     @cudaq.kernel
-    def grover_oracle(qubits: cudaq.qview, target_bits: list):
+    def grover_oracle(qubits: cudaq.qview, target_bits: list[int]):
         N = qubits.size()
         for i in range(N):
             if target_bits[i] == 0:
@@ -102,7 +102,7 @@ def _define_kernels():
                 x(qubits[i])
 
     @cudaq.kernel
-    def qaoa_kernel(N: int, G2: list, G4: list, num_layers: int, betas: list, gammas: list):
+    def qaoa_kernel(N: int, G2: list[list[int]], G4: list[list[int]], num_layers: int, betas: list[float], gammas: list[float]):
         qubits = cudaq.qvector(N)
         h(qubits)
         for layer in range(num_layers):
@@ -125,12 +125,12 @@ def _define_kernels():
     @cudaq.kernel
     def qaoa_plus_grover_kernel(
         N: int,
-        G2: list,
-        G4: list,
+        G2: list[list[int]],
+        G4: list[list[int]],
         num_layers: int,
-        betas: list,
-        gammas: list,
-        target_bits: list,
+        betas: list[float],
+        gammas: list[float],
+        target_bits: list[int],
         num_grover_rounds: int,
     ):
         qubits = cudaq.qvector(N)
