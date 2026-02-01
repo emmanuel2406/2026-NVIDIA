@@ -1,15 +1,8 @@
 # Product Requirements Document (PRD)
 
-**Project Name:** [e.g., LABS-Solv-V1]
-**Team Name:** [e.g., QuantumVibes]
-**GitHub Repository:** [Insert Link Here]
-
----
-
-> **Note to Students:** > The questions and examples provided in the specific sections below are **prompts to guide your thinking**, not a rigid checklist. 
-> * **Adaptability:** If a specific question doesn't fit your strategy, you may skip or adapt it.
-> * **Depth:** You are encouraged to go beyond these examples. If there are other critical technical details relevant to your specific approach, please include them.
-> * **Goal:** The objective is to convince the reader that you have a solid plan, not just to fill in boxes.
+**Project Name:** Quantum-go-brr
+**Team Name:** Harvard Blocheads
+**GitHub Repository:** https://github.com/emmanuel2406/2026-NVIDIA
 
 ---
 
@@ -92,10 +85,10 @@ literature. We have three primary reasons for choosing this approach:
 * **AI Hallucination Guardrails:** We test the solution for multiple values of n and in our case, ensure that it finds the optimal energy solution referenced by our golden answers in `evals/answers.csv`.
 
 ### Core Correctness Checks
-* **Check 1 (Symmetry):** [Describe a specific physics check]
-    * *Example:* "LABS sequence $S$ and its negation $-S$ must have identical energies. We will assert `energy(S) == energy(-S)`."
+* **Check 1 (Symmetry):** 
+    We test both physics symmetry tests that we found in Exercise 1, which tests both complementary and reversal symmetry for some sampled sequences as seen in `evals/physics_tests.py`.
 * **Check 2 (Ground Truth):**
-    * *Example:* "For $N=3$, the known optimal energy is 1.0. Our test suite will assert that our GPU kernel returns exactly 1.0 for the sequence `[1, 1, -1]`."
+    Our core evaluation suite which has been incrementally engineering to integrate well with our milestone 1 is given by `evals/eval_util.py`.
 
 ---
 
