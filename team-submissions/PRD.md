@@ -44,15 +44,19 @@ classical $O(1.34^N)$ to quantum $O(1.21^N)$). This provides a relative
 exponential speedup over the original method, as fewer Trotter steps are needed
 to generate high-quality "seeds" for the classical solver.
 3. **Parallelism:** Since QMF (as an adaptation on Grover Search)'s
-implementation on GPUs is highly parallelizable, we can reduce our reliance on the (less parallelizable)
-Trotterization method. This trading off of speed with lower accuracy of should
-give a higher reliance on the classical part consisting of Memetic Tabu Search.
+implementation on GPUs is highly parallelizable, we can reduce our reliance on
+the (less parallelizable) Trotterization method. This trading off of speed with
+lower accuracy of should give a higher reliance on the classical part consisting
+of Memetic Tabu Search.
 
 For the QAOA approach, we chose to use fixed-parameter QAOA with a
 contradiabatic ansatz for optimization, along with QMF as seen in prior
 literature. We have three primary reasons for choosing this approach:
 
-1. **Circuit Depth Efficiency:** Unlike generic ansatzes, the Counteradiabatic (CD) terms suppress transitions to excited states during evolution. This allows us to achieve higher fidelity with significantly shallower circuits (fewer Trotter steps), which is critical for minimizing noise and simulation overhead.
+1. **Circuit Depth Efficiency:** Unlike generic ansatzes, the Counteradiabatic
+(CD) terms suppress transitions to excited states during evolution. This allows
+us to achieve higher fidelity with significantly shallower circuits (fewer
+Trotter steps), which is critical for minimizing noise and simulation overhead.
 2. **Scalability:** By using fixed-parameter schedules (rather than variational
 optimization loops), we avoid the "barren plateau" problem and the high
 computational cost of training. This approach has been empirically shown to
@@ -86,7 +90,7 @@ We also reviewed the following approaches:
 
 * **Reference:** [A Quantum Algorithm for Finding the Minimum, Durr and Hoyer, https://arxiv.org/abs/quant-ph/9607014] 
 * **Relevance:** [How does this paper support your plan?]
-  This is the foundational paper for the QMF routine we are using.
+  This is the foundational paper for the QMF routine we are using, there's also an implementation of the algorithm in CUDAQ in the NVIDIA examples.
 
 ---
 
