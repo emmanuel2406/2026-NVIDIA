@@ -58,7 +58,7 @@ def timed_run(fn, *args, **kwargs) -> tuple:
 
 # Base methods (always run). With --classical-gpu: add classical_gpu and trotter/qmf use H100 MTS.
 # With --quantum-gpu: trotter and qmf use full H100-optimized code kernels (cudaq nvidia + GPU MTS).
-METHODS_BASE = ["mts", "random", "trotter", "qmf"]
+METHODS_BASE = ["mts", "random", "trotter", "qmf", "nvidia"]
 METHOD_CLASSICAL_GPU = "classical_gpu"
 METHOD_TROTTER_H100 = "trotter_h100"  # optional extra method name; --quantum-gpu switches kernel for "trotter"/"qmf"
 
@@ -156,6 +156,32 @@ def _run_random(N: int) -> list[int]:
     return [random.choice([-1, 1]) for _ in range(N)]
 
 
+def _run_nvidia(N: int, use_gpu_mts: bool = False, use_quantum_gpu: bool = False) -> list[int]:
+    """NVIDIA tutorial workflow (Trotter counteradiabatic + MTS) from tutorial_notebook/main.py.
+    Returns sequence only (timing via timed_run).
+    When use_gpu_mts=True (--classical-gpu), uses H100-optimized MTS for classical refinement.
+    When use_quantum_gpu=True (--quantum-gpu), uses full H100 path (cudaq nvidia + GPU MTS)."""
+    tutorial_path = REPO_ROOT / "tutorial_notebook" / "main.py"
+    if not tutorial_path.exists():
+        raise FileNotFoundError(
+            f"tutorial_notebook/main.py not found (required for nvidia method)"
+        )
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("tutorial_main", tutorial_path)
+    mod = importlib.util.module_from_spec(spec)
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    spec.loader.exec_module(mod)
+    seq, _ = mod.run_nvidia(
+        N,
+        use_gpu_mts=use_gpu_mts,
+        use_quantum_gpu=use_quantum_gpu,
+        verbose=False,
+    )
+    return seq
+
+
 def _run_classical_gpu(N: int) -> list[int]:
     """H100-optimized MTS from impl-mts/mts_h100_optimized.py. Returns sequence only (timing via timed_run)."""
     h100_path = REPO_ROOT / "impl-mts" / "mts_h100_optimized.py"
@@ -199,6 +225,10 @@ def run_method(method: str, N: int, use_gpu_mts: bool = False, use_quantum_gpu: 
         if use_quantum_gpu:
             return timed_run(_run_qmf_h100, N)
         return timed_run(_run_qmf, N, use_gpu_mts)
+    if method == "nvidia":
+        if use_quantum_gpu:
+            return timed_run(_run_nvidia, N, False, True)
+        return timed_run(_run_nvidia, N, use_gpu_mts, False)
     if method == METHOD_CLASSICAL_GPU:
         return timed_run(_run_classical_gpu, N)
     if method == METHOD_TROTTER_H100:
