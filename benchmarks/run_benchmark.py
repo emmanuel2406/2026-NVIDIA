@@ -50,7 +50,7 @@ def timed_run(fn, *args, **kwargs) -> tuple:
 # Stubbed methods (replace with real implementations)
 # ---------------------------------------------------------------------------
 
-METHODS = ["mts", "tabu", "random", "trotter"]
+METHODS = ["mts", "random", "trotter"]
 
 
 def _run_trotter(N: int) -> list[int]:
@@ -69,13 +69,29 @@ def _run_trotter(N: int) -> list[int]:
 
 
 def _run_mts(N: int) -> list[int]:
-    """Stub: Memetic Tabu Search. Returns sequence only."""
-    return [random.choice([-1, 1]) for _ in range(N)]
+    """Memetic Tabu Search from impl-mts/main.py. Returns sequence only (list of ±1)."""
+    mts_path = REPO_ROOT / "impl-mts" / "main.py"
+    if not mts_path.exists():
+        raise FileNotFoundError(f"impl-mts/main.py not found (required for mts method)")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("mts_module", mts_path)
+    mts_module = importlib.util.module_from_spec(spec)
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    spec.loader.exec_module(mts_module)
+    random.seed(42)
+    if hasattr(mts_module, "np"):
+        mts_module.np.random.seed(42)
+    best_s, _best_energy, _population = mts_module.memetic_tabu_search(
+        N=N,
+        population_size=50,
+        max_generations=100,
+        p_combine=0.9,
+        initial_population=None,
+        verbose=False,
+    )
+    return best_s.tolist() if hasattr(best_s, "tolist") else list(best_s)
 
-
-def _run_tabu(N: int) -> list[int]:
-    """Stub: Tabu Search. Returns sequence only."""
-    return [random.choice([-1, 1]) for _ in range(N)]
 
 
 def _run_random(N: int) -> list[int]:
@@ -87,8 +103,6 @@ def run_method(method: str, N: int) -> tuple[list[int], float]:
     """Dispatch to the appropriate method. Returns (sequence, time_sec). Timing via timed_run."""
     if method == "mts":
         return timed_run(_run_mts, N)
-    if method == "tabu":
-        return timed_run(_run_tabu, N)
     if method == "random":
         return timed_run(_run_random, N)
     if method == "trotter":
