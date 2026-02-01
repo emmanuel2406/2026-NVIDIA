@@ -9,6 +9,7 @@ Methods are stubbed for now - implement real algorithms as they become available
 Usage:
     python run_benchmark.py 3 4 5 10 20
     python run_benchmark.py 3-25
+    python run_benchmark.py --trials 5 10 20         # run each (N, method) 5 times, report mean stats
     python run_benchmark.py --classical-gpu 10 20     # add classical_gpu and H100 MTS in trotter/qmf
     python run_benchmark.py --quantum-gpu 10 20       # trotter and qmf use H100-optimized kernels (cudaq nvidia + GPU MTS)
 """
@@ -260,8 +261,9 @@ def parse_n_values(args: list[str]) -> list[int]:
     return sorted(set(values))
 
 
-def run_benchmark(n_values: list[int], methods: list[str], results_path: Path, use_gpu_mts: bool = False, use_quantum_gpu: bool = False) -> None:
+def run_benchmark(n_values: list[int], methods: list[str], results_path: Path, use_gpu_mts: bool = False, use_quantum_gpu: bool = False, trials: int = 1) -> None:
     """Run all (N, method) combinations and write results to CSV.
+    When trials > 1, each (N, method) is run trials times and quantitative stats (energy, F_N, normalized_distance, time_sec) are reported as arithmetic mean.
     When use_gpu_mts=True, trotter and qmf use H100-optimized MTS for their classical refinement step.
     When use_quantum_gpu=True, trotter and qmf use their full H100-optimized code kernels."""
     rows = []
@@ -270,27 +272,34 @@ def run_benchmark(n_values: list[int], methods: list[str], results_path: Path, u
         opt_energy = get_expected_optimal_energy(N, ANSWERS_CSV)
 
         for method in methods:
-            try:
-                seq, time_sec = run_method(method, N, use_gpu_mts=use_gpu_mts, use_quantum_gpu=use_quantum_gpu)
-                energy = compute_energy(seq)
-                F_N = compute_merit_factor(seq, energy)
-                seq_rl = sequence_to_runlength(seq)
+            energies: list[float] = []
+            F_Ns: list[float] = []
+            norm_dists: list[float] = []
+            time_secs: list[float] = []
+            best_seq_rl: str | None = None
+            best_energy: float | None = None
+            last_error: Exception | None = None
 
-                norm_dist = None
-                if opt_energy is not None:
-                    norm_dist = normalized_energy_distance(energy, opt_energy)
+            for _ in range(trials):
+                try:
+                    seq, time_sec = run_method(method, N, use_gpu_mts=use_gpu_mts, use_quantum_gpu=use_quantum_gpu)
+                    energy = compute_energy(seq)
+                    F_N = compute_merit_factor(seq, energy)
+                    seq_rl = sequence_to_runlength(seq)
+                    norm_dist = normalized_energy_distance(energy, opt_energy) if opt_energy is not None else None
 
-                rows.append({
-                    "N": N,
-                    "method": method,
-                    "energy": energy,
-                    "F_N": round(F_N, 4),
-                    "optimal_energy": opt_energy if opt_energy is not None else "",
-                    "normalized_distance": round(norm_dist, 6) if norm_dist is not None else "",
-                    "time_sec": round(time_sec, 6),
-                    "sequence": seq_rl,
-                })
-            except Exception as e:
+                    energies.append(energy)
+                    F_Ns.append(F_N)
+                    if norm_dist is not None:
+                        norm_dists.append(norm_dist)
+                    time_secs.append(time_sec)
+                    if best_energy is None or energy < best_energy:
+                        best_energy = energy
+                        best_seq_rl = seq_rl
+                except Exception as e:
+                    last_error = e
+
+            if not energies:
                 rows.append({
                     "N": N,
                     "method": method,
@@ -299,7 +308,22 @@ def run_benchmark(n_values: list[int], methods: list[str], results_path: Path, u
                     "optimal_energy": opt_energy if opt_energy is not None else "",
                     "normalized_distance": "",
                     "time_sec": "",
-                    "sequence": f"ERROR: {e}",
+                    "sequence": f"ERROR: {last_error}",
+                })
+            else:
+                mean_energy = sum(energies) / len(energies)
+                mean_F_N = sum(F_Ns) / len(F_Ns)
+                mean_time = sum(time_secs) / len(time_secs)
+                mean_norm_dist = (sum(norm_dists) / len(norm_dists)) if norm_dists else None
+                rows.append({
+                    "N": N,
+                    "method": method,
+                    "energy": round(mean_energy, 6),
+                    "F_N": round(mean_F_N, 4),
+                    "optimal_energy": opt_energy if opt_energy is not None else "",
+                    "normalized_distance": round(mean_norm_dist, 6) if mean_norm_dist is not None else "",
+                    "time_sec": round(mean_time, 6),
+                    "sequence": best_seq_rl or "",
                 })
 
     # Write CSV
@@ -332,6 +356,13 @@ def main():
         action="store_true",
         help="Use H100-optimized code kernels for trotter and qmf (cudaq nvidia + GPU MTS)",
     )
+    parser.add_argument(
+        "--trials",
+        type=int,
+        default=1,
+        metavar="T",
+        help="Run each (N, method) T times and report arithmetic mean of energy, F_N, normalized_distance, time_sec (default: 1)",
+    )
     parser.add_argument("n_values", nargs="*", default=[], help="N values, e.g. 3 4 5 10 or 3-10")
     args = parser.parse_args()
 
@@ -357,7 +388,10 @@ def main():
         print("(trotter and qmf will use H100-optimized MTS for classical refinement)")
     if use_quantum_gpu:
         print("(trotter and qmf will use H100-optimized code kernels: cudaq nvidia + GPU MTS)")
-    run_benchmark(n_values, methods, results_path, use_gpu_mts=use_gpu_mts, use_quantum_gpu=use_quantum_gpu)
+    if args.trials < 1:
+        parser.error("--trials must be >= 1")
+    print(f"Trials per (N, method): {args.trials}")
+    run_benchmark(n_values, methods, results_path, use_gpu_mts=use_gpu_mts, use_quantum_gpu=use_quantum_gpu, trials=args.trials)
 
 
 if __name__ == "__main__":
