@@ -512,6 +512,7 @@ def benchmark_gpu_vs_cpu(N_values: List[int], runs: int = 3):
                 config=config
             )
             gpu_time = time.time() - start
+            
             gpu_times.append(gpu_time)
             
             # CPU version (import from original)
