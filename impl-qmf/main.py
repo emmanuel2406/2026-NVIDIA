@@ -90,7 +90,7 @@ def _define_kernels():
         h(qubits)
 
     @cudaq.kernel
-    def grover_oracle(qubits: cudaq.qview, target_bits: list):
+    def grover_oracle(qubits: cudaq.qview, target_bits: list[int]):
         N = qubits.size()
         for i in range(N):
             if target_bits[i] == 0:
@@ -102,7 +102,7 @@ def _define_kernels():
                 x(qubits[i])
 
     @cudaq.kernel
-    def qaoa_kernel(N: int, G2: list, G4: list, num_layers: int, betas: list, gammas: list):
+    def qaoa_kernel(N: int, G2: list[list[int]], G4: list[list[int]], num_layers: int, betas: list[float], gammas: list[float]):
         qubits = cudaq.qvector(N)
         h(qubits)
         for layer in range(num_layers):
@@ -125,12 +125,12 @@ def _define_kernels():
     @cudaq.kernel
     def qaoa_plus_grover_kernel(
         N: int,
-        G2: list,
-        G4: list,
+        G2: list[list[int]],
+        G4: list[list[int]],
         num_layers: int,
-        betas: list,
-        gammas: list,
-        target_bits: list,
+        betas: list[float],
+        gammas: list[float],
+        target_bits: list[int],
         num_grover_rounds: int,
     ):
         qubits = cudaq.qvector(N)
@@ -218,14 +218,20 @@ def run_qaoa_plus_grover(N, p=2, num_grover_rounds=2, target_bitstring=None, sho
     return samples, best_bs, best_e, best_m, target_bitstring
 
 
-def _load_mts(repo_root: Path):
-    """Load memetic_tabu_search from impl-mts/main.py."""
+def _load_mts(repo_root: Path, use_gpu: bool = False):
+    """Load memetic_tabu_search from impl-mts/main.py or mts_h100_optimized.py when use_gpu=True."""
     import importlib.util
-    mts_path = repo_root / "impl-mts" / "main.py"
+    import sys
+    if use_gpu:
+        mts_path = repo_root / "impl-mts" / "mts_h100_optimized.py"
+    else:
+        mts_path = repo_root / "impl-mts" / "main.py"
     if not mts_path.exists():
         raise FileNotFoundError(f"MTS module not found: {mts_path}")
     spec = importlib.util.spec_from_file_location("mts_module", mts_path)
     mts_module = importlib.util.module_from_spec(spec)
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
     spec.loader.exec_module(mts_module)
     return mts_module
 
@@ -239,10 +245,12 @@ def run_hybrid(
     max_generations: int = 30,
     p_combine: float = 0.9,
     verbose: bool = False,
+    use_gpu_mts: bool = False,
 ) -> tuple:
     """
     Run QAOA+Grover+MTS hybrid. Returns (best_sequence_as_list, time_sec).
     best_sequence is list of ±1 for eval_util compatibility.
+    When use_gpu_mts=True, uses H100-optimized MTS from impl-mts/mts_h100_optimized.py.
     """
     repo_root = Path(__file__).resolve().parent.parent
     start = time.perf_counter()
@@ -260,11 +268,13 @@ def run_hybrid(
         for _ in range(count):
             quantum_population.append(seq.copy())
 
-    # Classical: MTS
-    mts_module = _load_mts(repo_root)
+    # Classical: MTS (CPU or H100-optimized when use_gpu_mts=True)
+    mts_module = _load_mts(repo_root, use_gpu=use_gpu_mts)
     memetic_tabu_search = mts_module.memetic_tabu_search
     random.seed(42)
     np.random.seed(42)
+    if use_gpu_mts and hasattr(mts_module, "cp"):
+        mts_module.cp.random.seed(42)
     best_s, best_energy, _ = memetic_tabu_search(
         N,
         population_size=population_size,
@@ -277,3 +287,124 @@ def run_hybrid(
     # Return as list of int for eval_util
     seq_list = best_s.tolist() if hasattr(best_s, "tolist") else list(best_s)
     return seq_list, elapsed
+
+
+def run_hybrid_h100_optimized(
+    N: int,
+    p: int = 2,
+    num_grover_rounds: int = 2,
+    shots: int = 500,
+    population_size: int = 50,
+    max_generations: int = 30,
+    p_combine: float = 0.9,
+    verbose: bool = False,
+    use_gpu_mts: bool = True,
+) -> tuple:
+    """
+    H100-optimized QAOA+Grover+MTS: uses cudaq nvidia backend and GPU MTS.
+    Same signature and return type as run_hybrid for drop-in replacement.
+    use_gpu_mts is ignored (always True). Returns (best_sequence_as_list, time_sec).
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    start = time.perf_counter()
+
+    if not _CUDAQ_AVAILABLE:
+        raise RuntimeError("cudaq required for QAOA+Grover+MTS method")
+
+    saved_target = None
+    if hasattr(cudaq, "get_target"):
+        try:
+            saved_target = cudaq.get_target()
+        except Exception:
+            pass
+
+    try:
+        try:
+            cudaq.set_target("nvidia")
+        except Exception as e:
+            if verbose:
+                import warnings
+                warnings.warn(f"cudaq.set_target('nvidia') failed: {e}; using default backend")
+    except NameError:
+        pass
+
+    use_gpu_mts_effective = True
+    try:
+        mts_module = _load_mts(repo_root, use_gpu=True)
+    except (FileNotFoundError, ImportError) as e:
+        if verbose:
+            import warnings
+            warnings.warn(f"H100 MTS not available ({e}); falling back to CPU MTS")
+        use_gpu_mts_effective = False
+        mts_module = _load_mts(repo_root, use_gpu=False)
+
+    try:
+        samples, best_bs, best_e_q, best_m_q, target = run_qaoa_plus_grover(
+            N, p, num_grover_rounds, target_bitstring=None, shots=shots
+        )
+        quantum_population = None
+        try:
+            _qmf_h100_path = Path(__file__).resolve().parent / "qmf_h100_optimized.py"
+            if _qmf_h100_path.exists():
+                import importlib.util
+                _spec = importlib.util.spec_from_file_location(
+                    "qmf_h100_optimized", _qmf_h100_path
+                )
+                _qmf_h100 = importlib.util.module_from_spec(_spec)
+                _spec.loader.exec_module(_qmf_h100)
+                if hasattr(_qmf_h100, "build_quantum_population_and_best"):
+                    result = _qmf_h100.build_quantum_population_and_best(
+                        samples, N, population_size
+                    )
+                    if result is not None:
+                        quantum_population, _ = result
+        except Exception:
+            pass
+        if quantum_population is None:
+            quantum_population = []
+            for bs, count in samples.items():
+                seq = bitstring_to_sequence(bs)
+                for _ in range(count):
+                    quantum_population.append(seq.copy())
+
+        # Sync GPU so cudaq work is done before CuPy MTS runs (avoids allocator/heap conflicts)
+        try:
+            import cupy as _cp
+            _cp.cuda.Stream.null.synchronize()
+        except Exception:
+            pass
+
+        memetic_tabu_search = mts_module.memetic_tabu_search
+        random.seed(42)
+        np.random.seed(42)
+        if use_gpu_mts_effective and hasattr(mts_module, "cp"):
+            mts_module.cp.random.seed(42)
+        best_s, best_energy, _ = memetic_tabu_search(
+            N,
+            population_size=population_size,
+            max_generations=max_generations,
+            p_combine=p_combine,
+            initial_population=quantum_population[:population_size] if quantum_population else None,
+            verbose=verbose,
+        )
+    finally:
+        if saved_target is not None and hasattr(cudaq, "set_target"):
+            try:
+                cudaq.set_target(saved_target)
+            except Exception:
+                pass
+        elif _CUDAQ_AVAILABLE:
+            try:
+                cudaq.set_target("default")
+            except Exception:
+                try:
+                    cudaq.set_target("qpp-cpu")
+                except Exception:
+                    pass
+
+    elapsed = time.perf_counter() - start
+    seq_list = best_s.tolist() if hasattr(best_s, "tolist") else list(best_s)
+    return seq_list, elapsed
+
+
+h100_optimized = run_hybrid_h100_optimized
