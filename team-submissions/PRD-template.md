@@ -36,6 +36,26 @@
     * *Example (Metric-driven):* "We chose QAOA because we believe the layer depth corresponds well to the correlation length of the LABS sequences."
     *  Example (Skills-driven):* "We selected VQE to maximize skill transfer. Our senior members want to test a novel 'warm-start' adaptation, while the standard implementation provides an accessible ramp-up for our members new to quantum variational methods."
    
+For this hackathon we have chosen to explore two different approaches: one using
+the trotterization method and another using QAOA. By exploring both methods, we
+aim to gain a deeper understanding of the strengths and limitations of each
+approach, as well as improve our probability of success by exploring surer gains
+along with more experimental methods.
+
+For the trotterization method, we chose to augment the trotterization method provided with symmetry-based exploitation and a short run of quantum minimum finding to converge even faster. This approach ensures at least a constant factor speedup over the original method (thanks to the symmetry-based exploitation) and can potentially achieve an exponential speedup over the original method by leveraging the power of quantum minimum finding. We have three primary reasons for choosing this approach:
+
+1. **Speedup:** The symmetry-based exploitation and quantum minimum finding can significantly speed up the trotterization method, ensuring at least a constant factor speedup over the original method with relative surety.
+2. **Exponential Speedup:** By leveraging the power of quantum minimum finding, we can potentially achieve an exponential speedup over the original method, as a few iterations of quantum minimum finding allows for a significant reduction in the number of trotter steps required as we require lower accuracy from our Trotterization method.
+3. **Parallelism:** Since QMF (as an adaptation on Grover Search) is highly
+parallelizable, we can reduce our reliance on the (less parallelizable) Trotterization method. This trading off of speed with lower accuracy of  should give a higher reliance on the classical part consisting of Memetic Tabu Search.
+
+For the QAOA approach, we chose to use QAOA with a hardware-efficient ansatz and
+augmented with a contradiabatic term for optimization. We have three primary
+reasons for choosing this approach:
+
+1. **Resource Efficiency:** Not only are hardware-efficient ansatzes more resource-efficient, but using an additional contradiabatic term also allows us to reduce the size of the Hamiltonian, which can lead to faster convergence on our ansatz.
+2. **Scalability:** Hardware-efficient ansatzes are more likely to scale well with increasing problem size, which is important for tackling larger instances of the LABS problem.
+3. **Skill-based:** Our team members have extensive experience with QAOA and are familiar with its implementation details thanks to our experience from past hackathons.
 
 ### Literature Review
 * **Reference:** [Title, Author, Link]
