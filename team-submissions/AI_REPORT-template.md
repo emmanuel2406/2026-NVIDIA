@@ -1,13 +1,12 @@
-> **Note to Students:** > The questions and examples provided in the specific sections below are **prompts to guide your thinking**, not a rigid checklist. 
-> * **Adaptability:** If a specific question doesn't fit your strategy, you may skip or adapt it.
-> * **Depth:** You are encouraged to go beyond these examples. If there are other critical technical details relevant to your specific approach, please include them.
-> * **Goal:** The objective is to convince the reader that you have employed AI agents in a thoughtful way.
 
-**Required Sections:**
-<img width="1381" height="257" alt="Screenshot 2026-02-01 at 4 20 38 AM" src="https://github.com/user-attachments/assets/101d6207-32d9-4054-b74e-83dd342cd69f" />
+
 
 **The Workflow:**
 
+
+<img width="1381" height="257" alt="Screenshot 2026-02-01 at 4 20 38 AM" src="https://github.com/user-attachments/assets/101d6207-32d9-4054-b74e-83dd342cd69f" />
+ 
+  
   We organized our AI agents using a single n8n workflow, which better represents how the system actually runs compared to using separate tools or chat instances. All agents are connected in one executable pipeline rather than working in isolation.
 
 The workflow is managed by an orchestrator agent that handles configuration, run IDs, and execution order. Domain-specific agents (such as QAOA and MTS agents) run their respective code modules. Using this setup, we can directly run all code files across different environments—BERQ, qBraid, or locally—without changing the overall workflow structure.
