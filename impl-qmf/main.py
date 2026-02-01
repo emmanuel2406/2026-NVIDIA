@@ -11,6 +11,8 @@ Usage:
 Returns best_seq as list of ±1 for eval_util compatibility.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 import time
 import random

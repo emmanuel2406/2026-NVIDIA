@@ -2,7 +2,7 @@
 Quantum-Enhanced Memetic Tabu Search for LABS using Image Hamiltonian
 
 This implementation combines:
-1. Image Hamiltonian (H_f) from generate_trotterization.py - supports 1/2/3/4-body terms
+1. Image Hamiltonian (H_f) from main.py - supports 1/2/3/4-body terms
 2. dcqo_flexible_circuit_v2 for counteradiabatic quantum optimization
 3. H100-optimized GPU MTS from impl-mts/mts_h100_optimized.py
 
@@ -31,8 +31,10 @@ import numpy as np
 import cudaq
 import matplotlib.pyplot as plt
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "impl-mts"))
+# Add impl-trotter and impl-mts to path for imports (main adds auxiliary_files when loaded)
+_impl_trotter_dir = Path(__file__).resolve().parent
+sys.path.insert(0, str(_impl_trotter_dir))
+sys.path.insert(0, str(_impl_trotter_dir.parent / "impl-mts"))
 
 # Import H100-optimized MTS
 try:
@@ -51,9 +53,9 @@ except ImportError:
     GPU_AVAILABLE = False
     print("[WARNING] GPU MTS not available, using CPU fallback")
 
-# Import quantum circuit and Hamiltonians from generate_trotterization
+# Import quantum circuit and Hamiltonians from main (formerly generate_trotterization)
 # First two qubits fixed as |1⟩|1⟩ (N even); skew-symmetry reduction (N odd).
-from generate_trotterization import (
+from main import (
     dcqo_flexible_circuit_v2,
     get_image_hamiltonian,
     get_labs_hamiltonian,
@@ -62,8 +64,12 @@ from generate_trotterization import (
     get_image_hamiltonian_skew_reduced,
     expand_skew_symmetric_counts,
     FIXED_FIRST_TWO_PREFIX,
-    r_z, r_zz, r_zzz, r_zzzz,
-    r_yz, r_yzzz,
+    r_z,
+    r_zz,
+    r_zzz,
+    r_zzzz,
+    r_yz,
+    r_yzzz,
 )
 
 # Import labs_utils for theta computation

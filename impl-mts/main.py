@@ -10,6 +10,8 @@ Based on: "Scaling advantage with quantum-enhanced memetic tabu search for LABS"
 https://arxiv.org/abs/2511.04553
 """
 
+from __future__ import annotations
+
 import numpy as np
 from typing import Tuple, List, Optional
 import random
@@ -300,8 +302,7 @@ def memetic_tabu_search(
         if verbose:
             print(f"[MTS] Fixed indices: {fixed_indices} -> values {fixed_values.tolist()}")
 
-    def _apply_fixed(s: np.ndarray) -> None:
-        if fixed_indices is not None:
+        def _apply_fixed(s: np.ndarray) -> None:
             for j, i in enumerate(fixed_indices):
                 s[i] = fixed_values[j]
     else:
