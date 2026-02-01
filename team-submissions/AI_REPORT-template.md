@@ -17,6 +17,7 @@ A verification agent checks the results and branches the workflow into success o
 For development, we primarily used Claude for coding and implementation, while ChatGPT was used for research, learning core concepts, and reasoning through design decisions. This combination allowed us to move quickly while keeping both the code and the underlying understanding aligned.
 
 **Verification Strategy:** 
+
 To validate AI-generated code and reduce logical errors or hallucinations, we relied on symmetry-based checks and simple invariants rather than overly complex testing. These methods are effective because many algorithms are expected to behave consistently under specific transformations, and violations often indicate hidden logic bugs.
 
 - Symmetry checks: Outputs were verified to remain invariant under symmetric transformations such as reordering inputs, permuting indices, or relabeling qubits. Any deviation signaled a logical inconsistency.
@@ -28,6 +29,7 @@ These checks were integrated into the verification stage of the workflow, allowi
 
 
  **The "Vibe" Log:**
+
 Even though AI handled a significant portion of the coding, we learned that **AI is only effective if the team using it understands what is right and what is wrong**. To benefit from AI acceleration, we still needed to understand the algorithms, the physics, and the system-level constraints well enough to recognize incorrect behavior, subtle bugs, or unrealistic assumptions.
 
 This made our hackathon experience not easier, but **more challenging and more valuable**. The AI accelerated implementation, but correctness, validation, and final decisions always remained human responsibilities.
