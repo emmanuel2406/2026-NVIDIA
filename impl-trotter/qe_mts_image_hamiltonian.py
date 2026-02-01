@@ -52,13 +52,15 @@ except ImportError:
     print("[WARNING] GPU MTS not available, using CPU fallback")
 
 # Import quantum circuit and Hamiltonians from generate_trotterization
-# First two qubits are fixed as |1⟩|1⟩ (bits "11"); circuit uses N-2 qubits.
+# First two qubits fixed as |1⟩|1⟩ (N even); skew-symmetry reduction (N odd).
 from generate_trotterization import (
     dcqo_flexible_circuit_v2,
     get_image_hamiltonian,
     get_labs_hamiltonian,
     reduce_hamiltonian_fix_first_two,
     prepend_fixed_prefix_to_counts,
+    get_image_hamiltonian_skew_reduced,
+    expand_skew_symmetric_counts,
     FIXED_FIRST_TWO_PREFIX,
     r_z, r_zz, r_zzz, r_zzzz,
     r_yz, r_yzzz,
@@ -145,11 +147,14 @@ def update_Ck_after_flip_cpu(s: np.ndarray, Ck_values: np.ndarray, flip_idx: int
 
 def tabu_search_cpu(s: np.ndarray, max_iter: int = None,
                     min_tabu_factor: float = 0.1,
-                    max_tabu_factor: float = 0.12) -> Tuple[np.ndarray, int]:
-    """CPU tabu search (fallback when GPU not available)"""
+                    max_tabu_factor: float = 0.12,
+                    fixed_indices: List[int] = None) -> Tuple[np.ndarray, int]:
+    """CPU tabu search (fallback when GPU not available). fixed_indices: indices that must not be flipped."""
     import random
     N = len(s)
     s = s.copy()
+    fixed_set = set(fixed_indices) if fixed_indices else set()
+    movable = [i for i in range(N) if i not in fixed_set]
 
     if max_iter is None:
         max_iter = random.randint(N // 2, 3 * N // 2)
@@ -168,7 +173,7 @@ def tabu_search_cpu(s: np.ndarray, max_iter: int = None,
         best_move = None
         best_move_energy = float('inf')
 
-        for i in range(N):
+        for i in movable:
             delta = compute_delta_energy_cpu(s, Ck_values, i)
             new_energy = current_energy + delta
 
@@ -179,10 +184,12 @@ def tabu_search_cpu(s: np.ndarray, max_iter: int = None,
                 best_move = i
                 best_move_energy = new_energy
 
-        if best_move is None:
-            best_move = random.randint(0, N - 1)
+        if best_move is None and movable:
+            best_move = random.choice(movable)
             delta = compute_delta_energy_cpu(s, Ck_values, best_move)
             best_move_energy = current_energy + delta
+        elif best_move is None:
+            break
 
         s[best_move] *= -1
         update_Ck_after_flip_cpu(s, Ck_values, best_move)
@@ -202,19 +209,36 @@ def memetic_tabu_search_cpu(N: int, population_size: int = 100,
                             max_generations: int = 1000,
                             p_combine: float = 0.9,
                             initial_population: List[np.ndarray] = None,
-                            verbose: bool = True) -> Tuple[np.ndarray, int, List[np.ndarray]]:
-    """CPU memetic tabu search (fallback)"""
+                            verbose: bool = True,
+                            fixed_indices: List[int] = None,
+                            fixed_values: np.ndarray = None) -> Tuple[np.ndarray, int, List[np.ndarray]]:
+    """CPU memetic tabu search (fallback). fixed_indices/fixed_values: positions that must not be changed."""
     import random
 
     if verbose:
         print(f"[MTS-CPU] N={N}, pop={population_size}, gens={max_generations}")
+    if fixed_indices is not None:
+        if fixed_values is None or len(fixed_values) != len(fixed_indices):
+            raise ValueError("fixed_values must be provided and match length of fixed_indices")
+        fixed_values = np.asarray(fixed_values, dtype=np.int32)
+
+    def _apply_fixed(s: np.ndarray) -> None:
+        if fixed_indices is not None:
+            for j, i in enumerate(fixed_indices):
+                s[i] = fixed_values[j]
 
     if initial_population is not None:
         population = [seq.copy() for seq in initial_population[:population_size]]
         while len(population) < population_size:
-            population.append(np.random.choice([-1, 1], size=N))
+            new_s = np.random.choice([-1, 1], size=N)
+            _apply_fixed(new_s)
+            population.append(new_s)
     else:
-        population = [np.random.choice([-1, 1], size=N) for _ in range(population_size)]
+        population = []
+        for _ in range(population_size):
+            s = np.random.choice([-1, 1], size=N)
+            _apply_fixed(s)
+            population.append(s)
 
     energies = [compute_energy(s) for s in population]
     best_idx = np.argmin(energies)
@@ -222,22 +246,27 @@ def memetic_tabu_search_cpu(N: int, population_size: int = 100,
     best_energy = energies[best_idx]
 
     start_time = time.time()
+    fixed_set = set(fixed_indices) if fixed_indices else set()
 
     for gen in range(max_generations):
         if random.random() < p_combine:
             idx1, idx2 = random.sample(range(population_size), 2)
             k = random.randint(1, N - 1)
             child = np.concatenate([population[idx1][:k], population[idx2][k:]])
+            if fixed_indices is not None:
+                for j, i in enumerate(fixed_indices):
+                    child[i] = population[idx1][i]
         else:
             idx = random.randint(0, population_size - 1)
             child = population[idx].copy()
 
-        # Mutate
+        # Mutate (skip fixed indices)
         for i in range(N):
-            if random.random() < 1.0 / N:
+            if i not in fixed_set and random.random() < 1.0 / N:
                 child[i] *= -1
 
-        improved_child, child_energy = tabu_search_cpu(child)
+        improved_child, child_energy = tabu_search_cpu(child, fixed_indices=fixed_indices)
+        _apply_fixed(improved_child)
 
         if child_energy < best_energy:
             best_energy = child_energy
@@ -262,14 +291,20 @@ def memetic_tabu_search_cpu(N: int, population_size: int = 100,
 
 def run_mts(N: int, population_size: int, max_generations: int,
             p_combine: float = 0.9, initial_population: List[np.ndarray] = None,
-            verbose: bool = True) -> Tuple[np.ndarray, int, List[np.ndarray]]:
-    """Run MTS using GPU if available, otherwise CPU"""
+            verbose: bool = True,
+            fixed_indices: List[int] = None,
+            fixed_values: np.ndarray = None) -> Tuple[np.ndarray, int, List[np.ndarray]]:
+    """Run MTS using GPU if available, otherwise CPU.
+    fixed_indices/fixed_values: when set (e.g. [0,1] and [-1,-1] for truncated Hamiltonian),
+    MTS will never change those positions."""
     if GPU_AVAILABLE:
         return mts_gpu(N, population_size, max_generations, p_combine,
-                       initial_population, verbose=verbose)
+                       initial_population, verbose=verbose,
+                       fixed_indices=fixed_indices, fixed_values=fixed_values)
     else:
         return memetic_tabu_search_cpu(N, population_size, max_generations,
-                                       p_combine, initial_population, verbose)
+                                       p_combine, initial_population, verbose,
+                                       fixed_indices=fixed_indices, fixed_values=fixed_values)
 
 
 # ============================================================================
@@ -311,15 +346,19 @@ def sample_quantum_population(N: int, n_shots: int, trotter_steps: int,
     start_time = time.time()
 
     if N < 3:
-        raise ValueError("sample_quantum_population requires N >= 3 (first two qubits fixed as 11, circuit uses N-2 qubits)")
+        raise ValueError("sample_quantum_population requires N >= 3")
 
-    if verbose:
-        print(f"[QUANTUM] Preparing circuit: N={N}, shots={n_shots}, steps={trotter_steps}, T={total_time} (first two bits fixed as 11)")
-
-    # Get full Hamiltonian and reduce for fixed first two qubits (circuit uses N-2 qubits)
-    t1, t2, t3, t4 = get_image_hamiltonian(N)
-    t1r, t2r, t3r, t4r = reduce_hamiltonian_fix_first_two(t1, t2, t3, t4)
-    num_qubits_circuit = N - 2
+    use_skew = (N % 2 == 1)
+    if use_skew:
+        if verbose:
+            print(f"[QUANTUM] Preparing circuit: N={N}, shots={n_shots}, steps={trotter_steps}, T={total_time} (skew-symmetry, {(N+1)//2} qubits)")
+        t1r, t2r, t3r, t4r, num_qubits_circuit = get_image_hamiltonian_skew_reduced(N)
+    else:
+        if verbose:
+            print(f"[QUANTUM] Preparing circuit: N={N}, shots={n_shots}, steps={trotter_steps}, T={total_time} (first two bits fixed as 11, N-2 qubits)")
+        t1, t2, t3, t4 = get_image_hamiltonian(N)
+        t1r, t2r, t3r, t4r = reduce_hamiltonian_fix_first_two(t1, t2, t3, t4)
+        num_qubits_circuit = N - 2
 
     if verbose:
         print(f"[QUANTUM] Hamiltonian terms (reduced): {len(t1r)} (1-body), {len(t2r)} (2-body), "
@@ -352,22 +391,142 @@ def sample_quantum_population(N: int, n_shots: int, trotter_steps: int,
 
     circuit_time = time.time() - circuit_start
 
-    # Full bitstrings: prepend fixed "11" so sequences have length N
+    # Full bitstrings: skew expansion (N odd) or prepend "11" (N even)
     population = []
     energies = []
-    for bitstring, count in result.items():
-        full_bitstring = FIXED_FIRST_TWO_PREFIX + bitstring
-        seq = bitstring_to_sequence(full_bitstring)
-        energy = compute_energy(seq)
-        for _ in range(count):
-            population.append(seq.copy())
-            energies.append(energy)
+    if use_skew:
+        full_counts = expand_skew_symmetric_counts(result, N)
+        for full_bitstring, count in full_counts.items():
+            seq = bitstring_to_sequence(full_bitstring)
+            energy = compute_energy(seq)
+            for _ in range(count):
+                population.append(seq.copy())
+                energies.append(energy)
+        most_probable_full = max(full_counts.keys(), key=lambda k: full_counts[k]) if full_counts else ""
+    else:
+        for bitstring, count in result.items():
+            full_bitstring = FIXED_FIRST_TWO_PREFIX + bitstring
+            seq = bitstring_to_sequence(full_bitstring)
+            energy = compute_energy(seq)
+            for _ in range(count):
+                population.append(seq.copy())
+                energies.append(energy)
+        most_probable_full = FIXED_FIRST_TWO_PREFIX + result.most_probable()
 
     total_time_elapsed = time.time() - start_time
 
     metrics = {
         "n_unique_bitstrings": len(result),
-        "most_probable": FIXED_FIRST_TWO_PREFIX + result.most_probable(),
+        "most_probable": most_probable_full,
+        "circuit_time_s": circuit_time,
+        "total_time_s": total_time_elapsed,
+        "mean_energy": float(np.mean(energies)),
+        "min_energy": int(np.min(energies)),
+        "max_energy": int(np.max(energies)),
+        "std_energy": float(np.std(energies)),
+        "trotter_steps": trotter_steps,
+        "annealing_time": total_time,
+    }
+
+    if verbose:
+        print(f"[QUANTUM] Sampled {len(population)} sequences ({len(result)} unique)")
+        print(f"[QUANTUM] Circuit execution: {circuit_time:.3f}s")
+        print(f"[QUANTUM] Energy stats: mean={metrics['mean_energy']:.1f}, "
+              f"min={metrics['min_energy']}, max={metrics['max_energy']}")
+
+    return population, metrics
+
+def sample_quantum_population_opt_labs(N: int, n_shots: int, trotter_steps: int,
+                              total_time: float = 2.0,
+                              verbose: bool = True) -> Tuple[List[np.ndarray], Dict[str, Any]]:
+    """
+    Sample a population from the quantum circuit using the optimized labs Hamiltonian.
+
+    Args:
+        N: Sequence length
+        n_shots: Number of quantum samples
+        trotter_steps: Number of Trotter steps
+        total_time: Total annealing time T
+        verbose: Print progress
+
+    Returns:
+        Tuple of (population list, quantum metrics dict)
+    """
+    start_time = time.time()
+
+    if N < 3:
+        raise ValueError("sample_quantum_population requires N >= 3")
+
+    use_skew = (N % 2 == 1)
+    if use_skew:
+        if verbose:
+            print(f"[QUANTUM] Preparing LABS SKEW circuit: N={N}, shots={n_shots}, steps={trotter_steps}, T={total_time} (skew-symmetry, {(N+1)//2} qubits)")
+        t1r, t2r, t3r, t4r, num_qubits_circuit = get_image_hamiltonian_skew_reduced(N)
+    else:
+        if verbose:
+            print(f"[QUANTUM] Preparing LABS FIXED circuit: N={N}, shots={n_shots}, steps={trotter_steps}, T={total_time} (first two bits fixed as 11, N-2 qubits)")
+        t1, t2, t3, t4 = get_labs_hamiltonian(N)
+        t1r, t2r, t3r, t4r = reduce_hamiltonian_fix_first_two(t1, t2, t3, t4)
+        num_qubits_circuit = N - 2
+
+    if verbose:
+        print(f"[QUANTUM] Hamiltonian terms (reduced): {len(t1r)} (1-body), {len(t2r)} (2-body), "
+              f"{len(t3r)} (3-body), {len(t4r)} (4-body)")
+
+    t1_flat = [list(map(float, t)) for t in t1r]
+    t2_flat = [list(map(float, t)) for t in t2r]
+    t3_flat = [list(map(float, t)) for t in t3r]
+    t4_flat = [list(map(float, t)) for t in t4r]
+
+    dt = total_time / trotter_steps
+    t_points = np.linspace(0, total_time, trotter_steps)
+    lambda_sched = np.sin((np.pi / 2) * (t_points / total_time))**2
+    lambda_dot_sched = (np.pi / total_time) * np.sin(np.pi * t_points / total_time) / 2.0
+
+    if verbose:
+        print(cudaq.draw(dcqo_flexible_circuit_v2, num_qubits_circuit, trotter_steps,
+            t1_flat, t2_flat, t3_flat, t4_flat,
+            lambda_sched.tolist(), lambda_dot_sched.tolist(), dt))
+
+    circuit_start = time.time()
+
+    result = cudaq.sample(
+        dcqo_flexible_circuit_v2,
+        num_qubits_circuit, trotter_steps,
+        t1_flat, t2_flat, t3_flat, t4_flat,
+        lambda_sched.tolist(), lambda_dot_sched.tolist(), dt,
+        shots_count=n_shots
+    )
+
+    circuit_time = time.time() - circuit_start
+
+    # Full bitstrings: skew expansion (N odd) or prepend "11" (N even)
+    population = []
+    energies = []
+    if use_skew:
+        full_counts = expand_skew_symmetric_counts(result, N)
+        for full_bitstring, count in full_counts.items():
+            seq = bitstring_to_sequence(full_bitstring)
+            energy = compute_energy(seq)
+            for _ in range(count):
+                population.append(seq.copy())
+                energies.append(energy)
+        most_probable_full = max(full_counts.keys(), key=lambda k: full_counts[k]) if full_counts else ""
+    else:
+        for bitstring, count in result.items():
+            full_bitstring = FIXED_FIRST_TWO_PREFIX + bitstring
+            seq = bitstring_to_sequence(full_bitstring)
+            energy = compute_energy(seq)
+            for _ in range(count):
+                population.append(seq.copy())
+                energies.append(energy)
+        most_probable_full = FIXED_FIRST_TWO_PREFIX + result.most_probable()
+
+    total_time_elapsed = time.time() - start_time
+
+    metrics = {
+        "n_unique_bitstrings": len(result),
+        "most_probable": most_probable_full,
         "circuit_time_s": circuit_time,
         "total_time_s": total_time_elapsed,
         "mean_energy": float(np.mean(energies)),
@@ -585,7 +744,7 @@ def benchmark_quantum_enhanced_mts(config: RunConfig, verbose: bool = True) -> B
 
     quantum_time = time.time() - start_time
 
-    # Step 2: Run MTS with quantum-seeded population
+    # Step 2: Run MTS with quantum-seeded population (first two bits fixed as 11 for truncated Hamiltonian)
     mts_start = time.time()
 
     best_s, best_energy, population = run_mts(
@@ -594,7 +753,9 @@ def benchmark_quantum_enhanced_mts(config: RunConfig, verbose: bool = True) -> B
         max_generations=config.max_generations,
         p_combine=config.p_combine,
         initial_population=initial_pop,
-        verbose=verbose
+        verbose=verbose,
+        fixed_indices=[0, 1],
+        fixed_values=np.array([-1, -1], dtype=np.int32),
     )
 
     mts_time = time.time() - mts_start
@@ -692,6 +853,72 @@ def benchmark_quantum_enhanced_mts_labs(config: RunConfig, verbose: bool = True)
         }
     )
 
+    
+
+def benchmark_quantum_enhanced_mts_opt_labs(config: RunConfig, verbose: bool = True) -> BenchmarkResult:
+    """Run and benchmark quantum-enhanced MTS with LABS Hamiltonian"""
+    if verbose:
+        print("\n" + "=" * 70)
+        print("METHOD 4: Quantum-Enhanced MTS (LABS Hamiltonian)")
+        print("=" * 70)
+
+    start_time = time.time()
+
+    # Step 1: Sample quantum population using LABS Hamiltonian
+    quantum_population, quantum_metrics = sample_quantum_population_opt_labs(
+        N=config.N,
+        n_shots=config.n_shots,
+        trotter_steps=config.trotter_steps,
+        total_time=config.total_time,
+        verbose=verbose
+    )
+
+    # Track initial (quantum) population energies
+    initial_pop = quantum_population[:config.population_size]
+    initial_energies = [compute_energy(s) for s in initial_pop]
+
+    quantum_time = time.time() - start_time
+
+    # Step 2: Run MTS with quantum-seeded population
+    mts_start = time.time()
+
+    best_s, best_energy, population = run_mts(
+        N=config.N,
+        population_size=config.population_size,
+        max_generations=config.max_generations,
+        p_combine=config.p_combine,
+        initial_population=initial_pop,
+        verbose=verbose
+    )
+
+    mts_time = time.time() - mts_start
+    total_time = time.time() - start_time
+
+    best_merit = compute_merit_factor(best_s, best_energy)
+    final_energies = [compute_energy(s) for s in population]
+
+    return BenchmarkResult(
+        method_name="QE-MTS (LABS OPT H)",
+        best_energy=int(best_energy),
+        best_merit=float(best_merit),
+        best_sequence=sequence_to_bitstring(best_s),
+        total_time_s=total_time,
+        samples_or_generations=config.max_generations,
+        throughput=config.max_generations / total_time,
+        population_mean_energy=float(np.mean(final_energies)),
+        population_min_energy=int(np.min(final_energies)),
+        population_max_energy=int(np.max(final_energies)),
+        initial_population_energies=[int(e) for e in initial_energies],
+        final_population_energies=[int(e) for e in final_energies],
+        additional_metrics={
+            "quantum_sampling_time_s": quantum_time,
+            "mts_time_s": mts_time,
+            "quantum_initial_mean_energy": quantum_metrics["mean_energy"],
+            "quantum_initial_min_energy": quantum_metrics["min_energy"],
+            "n_unique_quantum_states": quantum_metrics["n_unique_bitstrings"],
+            "circuit_execution_time_s": quantum_metrics["circuit_time_s"],
+        }
+    )
 
 # ============================================================================
 # Visualization
@@ -701,21 +928,24 @@ def create_comparison_plot(results: List[BenchmarkResult], config: RunConfig,
                            output_path: Path):
     """Create comprehensive comparison visualization with initial population distributions"""
     n_methods = len(results)
-    colors = ['gray', 'orange', 'dodgerblue', 'green'][:n_methods]
+    colors = ['gray', 'orange', 'dodgerblue', 'green', 'red'][:n_methods]
 
     # Create figure with 4 rows:
     # Row 1: Summary bar charts (Energy, Merit, Time)
     # Row 2: Initial population distributions
     # Row 3: Final population distributions
     # Row 4: Autocorrelations of best sequences
+    print("WTF")
     fig = plt.figure(figsize=(4 * n_methods, 16))
 
+    print("WTF2")
     methods = [r.method_name for r in results]
     energies = [r.best_energy for r in results]
     merits = [r.best_merit for r in results]
     times = [r.total_time_s for r in results]
 
     # --- Row 1: Summary Bar Charts ---
+    print("WTF3")
     # Plot 1: Best Energy Comparison
     ax1 = fig.add_subplot(4, 3, 1)
     bars1 = ax1.bar(range(n_methods), energies, color=colors, alpha=0.7, edgecolor='black')
@@ -780,20 +1010,20 @@ def create_comparison_plot(results: List[BenchmarkResult], config: RunConfig,
         ax.set_title(f'{result.method_name}\nFinal Pop Distribution')
 
     # --- Row 4: Autocorrelations of Best Sequences ---
-    for idx, result in enumerate(results):
-        ax = fig.add_subplot(4, n_methods, 3 * n_methods + 1 + idx)
-        seq = bitstring_to_sequence(result.best_sequence)
-        N = len(seq)
-        Ck_values = [compute_Ck(seq, k) for k in range(1, N)]
+    # for idx, result in enumerate(results):
+    #     ax = fig.add_subplot(4, n_methods, 3 * n_methods + 1 + idx)
+    #     seq = bitstring_to_sequence(result.best_sequence)
+    #     N = len(seq)
+    #     Ck_values = [compute_Ck(seq, k) for k in range(1, N)]
 
-        # Color by magnitude
-        bar_colors = [colors[idx] if c == 0 else ('green' if abs(c) <= 1 else 'red')
-                      for c in Ck_values]
-        ax.bar(range(1, N), Ck_values, color=bar_colors, alpha=0.7)
-        ax.axhline(0, color='black', linestyle='-', linewidth=0.5)
-        ax.set_xlabel('Lag k')
-        ax.set_ylabel('C_k')
-        ax.set_title(f'{result.method_name}\nE={result.best_energy}, F={result.best_merit:.3f}')
+    #     # Color by magnitude
+    #     bar_colors = [colors[idx] if c == 0 else ('green' if abs(c) <= 1 else 'red')
+    #                   for c in Ck_values]
+    #     ax.bar(range(1, N), Ck_values, color=bar_colors, alpha=0.7)
+    #     ax.axhline(0, color='black', linestyle='-', linewidth=0.5)
+    #     ax.set_xlabel('Lag k')
+    #     ax.set_ylabel('C_k')
+    #     ax.set_title(f'{result.method_name}\nE={result.best_energy}, F={result.best_merit:.3f}')
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
@@ -903,11 +1133,13 @@ def print_final_summary(results: List[BenchmarkResult], config: RunConfig):
         mts_energy = results[1].best_energy
         qe_image_energy = results[2].best_energy
         qe_labs_energy = results[3].best_energy
+        qe_labs_opt_energy = results[4].best_energy
         print("\n" + "-" * 70)
         print("QUANTUM vs CLASSICAL MTS:")
         print(f"  QE-MTS (Image) vs Classical MTS: {mts_energy - qe_image_energy} energy units")
         print(f"  QE-MTS (LABS) vs Classical MTS:  {mts_energy - qe_labs_energy} energy units")
         print(f"  QE-MTS (Image) vs QE-MTS (LABS): {qe_labs_energy - qe_image_energy} energy units")
+        print(f"  QE-MTS (Image) vs QE-MTS (LABS OPT): {qe_labs_opt_energy - qe_image_energy} energy units")
     print("=" * 70)
 
 
@@ -1011,6 +1243,12 @@ def main():
     random.seed(config.seed)
     result_qe_labs = benchmark_quantum_enhanced_mts_labs(config, verbose=verbose)
     results.append(result_qe_labs)
+    
+    # Method 5: Quantum-Enhanced OPT MTS (LABS Hamiltonian)
+    np.random.seed(config.seed)
+    random.seed(config.seed)
+    result_qe_opt_labs = benchmark_quantum_enhanced_mts_opt_labs(config, verbose=verbose)
+    results.append(result_qe_opt_labs)
 
     # Save outputs
     save_results(results, config)

@@ -111,9 +111,12 @@ def tabu_search(
     max_tabu_factor: float = 0.12,
     tabu_id: Optional[int] = None,
     verbose: bool = True,
+    fixed_indices: Optional[List[int]] = None,
 ) -> Tuple[np.ndarray, int]:
     """
     Tabu search starting from sequence s.
+
+    fixed_indices: indices that must not be flipped (e.g. [0, 1] when first two bits are fixed).
 
     Returns:
         (best_sequence, best_energy)
@@ -121,6 +124,8 @@ def tabu_search(
     N = len(s)
     s = s.copy()
     prefix = f"[TABU-{tabu_id}]" if tabu_id is not None else "[TABU]"
+    fixed_set = set(fixed_indices) if fixed_indices else set()
+    movable = [i for i in range(N) if i not in fixed_set]
 
     if max_iter is None:
         max_iter = random.randint(N // 2, 3 * N // 2)
@@ -152,7 +157,7 @@ def tabu_search(
         best_move_energy = float("inf")
         used_aspiration = False
 
-        for i in range(N):
+        for i in movable:
             delta = compute_delta_energy(s, Ck_values, i)
             new_energy = current_energy + delta
             is_tabu = tabu_list[i] >= t
@@ -164,11 +169,13 @@ def tabu_search(
                 if is_tabu and aspiration:
                     used_aspiration = True
 
-        if best_move is None:
-            best_move = random.randint(0, N - 1)
+        if best_move is None and movable:
+            best_move = random.choice(movable)
             best_move_energy = current_energy + compute_delta_energy(
                 s, Ck_values, best_move
             )
+        elif best_move is None:
+            break
 
         if used_aspiration:
             aspiration_used += 1
@@ -205,11 +212,19 @@ def tabu_search(
 # ============================================================================
 
 
-def combine(parent1: np.ndarray, parent2: np.ndarray, verbose: bool = True) -> np.ndarray:
-    """Single-point crossover."""
+def combine(
+    parent1: np.ndarray,
+    parent2: np.ndarray,
+    verbose: bool = True,
+    fixed_indices: Optional[List[int]] = None,
+) -> np.ndarray:
+    """Single-point crossover. If fixed_indices is set, child keeps parent1's values at those indices."""
     N = len(parent1)
     k = random.randint(1, N - 1)
     child = np.concatenate([parent1[:k], parent2[k:]])
+    if fixed_indices:
+        for i in fixed_indices:
+            child[i] = parent1[i]
     if verbose:
         print(
             f"[COMBINE] Cut point k={k}, child inherits [0:{k}) from P1, [{k}:{N}) from P2"
@@ -217,13 +232,19 @@ def combine(parent1: np.ndarray, parent2: np.ndarray, verbose: bool = True) -> n
     return child
 
 
-def mutate(s: np.ndarray, p_mut: Optional[float] = None, verbose: bool = True) -> np.ndarray:
-    """Mutate by flipping each bit independently with probability p_mut (default 1/N)."""
+def mutate(
+    s: np.ndarray,
+    p_mut: Optional[float] = None,
+    verbose: bool = True,
+    fixed_indices: Optional[List[int]] = None,
+) -> np.ndarray:
+    """Mutate by flipping each bit independently with probability p_mut (default 1/N). Skips fixed_indices."""
     N = len(s)
     if p_mut is None:
         p_mut = 1.0 / N
+    fixed_set = set(fixed_indices) if fixed_indices else set()
     child = s.copy()
-    flipped = [i for i in range(N) if random.random() < p_mut]
+    flipped = [i for i in range(N) if i not in fixed_set and random.random() < p_mut]
     for i in flipped:
         child[i] *= -1
     if verbose:
@@ -244,6 +265,8 @@ def memetic_tabu_search(
     initial_population: Optional[List[np.ndarray]] = None,
     target_energy: Optional[int] = None,
     verbose: bool = True,
+    fixed_indices: Optional[List[int]] = None,
+    fixed_values: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, int, List[np.ndarray]]:
     """
     Memetic Tabu Search for LABS.
@@ -256,6 +279,8 @@ def memetic_tabu_search(
         initial_population: Optional list of ±1 sequences (e.g. from quantum samples)
         target_energy: Optional early-stop target
         verbose: Whether to print progress
+        fixed_indices: Indices that must not be changed (e.g. [0, 1] for truncated Hamiltonian)
+        fixed_values: Values at fixed_indices (length must match fixed_indices; e.g. [-1,-1] for bits "11")
 
     Returns:
         (best_sequence, best_energy, final_population)
@@ -268,18 +293,38 @@ def memetic_tabu_search(
             f"[MTS] N={N}, population_size={population_size}, "
             f"max_generations={max_generations}, p_combine={p_combine}, p_mut=1/N"
         )
+    if fixed_indices is not None:
+        if fixed_values is None or len(fixed_values) != len(fixed_indices):
+            raise ValueError("fixed_values must be provided and match length of fixed_indices")
+        fixed_values = np.asarray(fixed_values, dtype=np.int32)
+        if verbose:
+            print(f"[MTS] Fixed indices: {fixed_indices} -> values {fixed_values.tolist()}")
+
+    def _apply_fixed(s: np.ndarray) -> None:
+        if fixed_indices is not None:
+            for j, i in enumerate(fixed_indices):
+                s[i] = fixed_values[j]
+    else:
+        def _apply_fixed(s: np.ndarray) -> None:
+            pass
 
     if initial_population is not None:
         if verbose:
             print(f"[MTS] Using provided initial population of {len(initial_population)} sequences")
         population = [seq.copy() for seq in initial_population]
         while len(population) < population_size:
-            population.append(np.random.choice([-1, 1], size=N))
+            new_s = np.random.choice([-1, 1], size=N)
+            _apply_fixed(new_s)
+            population.append(new_s)
         population = population[:population_size]
     else:
         if verbose:
             print(f"[MTS] Generating random initial population of {population_size} sequences")
-        population = [np.random.choice([-1, 1], size=N) for _ in range(population_size)]
+        population = []
+        for _ in range(population_size):
+            s = np.random.choice([-1, 1], size=N)
+            _apply_fixed(s)
+            population.append(s)
 
     energies = [compute_energy(s) for s in population]
     merits = [compute_merit_factor(s, e) for s, e in zip(population, energies)]
@@ -308,15 +353,21 @@ def memetic_tabu_search(
 
         if random.random() < p_combine:
             idx1, idx2 = random.sample(range(population_size), 2)
-            child = combine(population[idx1], population[idx2], verbose=verbose)
+            child = combine(
+                population[idx1], population[idx2],
+                verbose=verbose, fixed_indices=fixed_indices,
+            )
             operation = f"crossover(P[{idx1}], P[{idx2}])"
         else:
             idx = random.randint(0, population_size - 1)
             child = population[idx].copy()
             operation = f"select(P[{idx}])"
 
-        child = mutate(child, verbose=verbose)
-        improved_child, child_energy = tabu_search(child, tabu_id=gen, verbose=verbose)
+        child = mutate(child, verbose=verbose, fixed_indices=fixed_indices)
+        improved_child, child_energy = tabu_search(
+            child, tabu_id=gen, verbose=verbose, fixed_indices=fixed_indices,
+        )
+        _apply_fixed(improved_child)
         child_merit = compute_merit_factor(improved_child, child_energy)
 
         if child_energy < best_energy:

@@ -601,12 +601,25 @@ def memetic_tabu_search(
     initial_population: Optional[List[np.ndarray]] = None,
     target_energy: Optional[int] = None,
     verbose: bool = True,
+    fixed_indices: Optional[List[int]] = None,
+    fixed_values: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, int, List[np.ndarray]]:
     """
     H100-Optimized Memetic Tabu Search for LABS.
     Same API as main.py but GPU-accelerated.
+    fixed_indices: indices that must not be changed (e.g. [0, 1] for truncated Hamiltonian).
+    fixed_values: values at fixed_indices (length must match fixed_indices; e.g. [-1,-1] for bits "11").
     """
     config = get_config()
+    if fixed_indices is not None:
+        if fixed_values is None or len(fixed_values) != len(fixed_indices):
+            raise ValueError("fixed_values must be provided and match length of fixed_indices")
+        fixed_values = np.asarray(fixed_values, dtype=np.int32)
+        fixed_indices_cp = cp.array(fixed_indices, dtype=cp.int32)
+        fixed_values_cp = cp.array(fixed_values, dtype=cp.int32)
+    else:
+        fixed_indices_cp = None
+        fixed_values_cp = None
 
     if verbose:
         print("=" * 70)
@@ -615,6 +628,8 @@ def memetic_tabu_search(
         print(f"[MTS-GPU] N={N}, population_size={population_size}, "
               f"max_generations={max_generations}, p_combine={p_combine}")
         print(f"[MTS-GPU] Batch tabu size: {config.batch_tabu_size}")
+        if fixed_indices is not None:
+            print(f"[MTS-GPU] Fixed indices: {fixed_indices} -> values {fixed_values.tolist()}")
 
     streams = [cp.cuda.Stream() for _ in range(config.num_streams)]
 
@@ -635,13 +650,19 @@ def memetic_tabu_search(
         if len(init_seqs) < population_size:
             num_random = population_size - len(init_seqs)
             random_seqs = np.random.choice([-1, 1], size=(num_random, N)).astype(np.int32)
-            init_seqs.extend([random_seqs[i].copy() for i in range(num_random)])
+            for i in range(num_random):
+                if fixed_indices is not None:
+                    for j, idx in enumerate(fixed_indices):
+                        random_seqs[i, idx] = fixed_values[j]
+                init_seqs.append(random_seqs[i].copy())
         population_gpu = cp.array(np.stack(init_seqs), dtype=cp.int32)
     else:
         if verbose:
             print(f"[MTS-GPU] Generating random initial population")
         population_gpu = cp.random.choice(cp.array([-1, 1], dtype=cp.int32),
                                           size=(population_size, N))
+        if fixed_indices_cp is not None:
+            population_gpu[:, fixed_indices_cp] = fixed_values_cp
 
     # Compute initial energies
     Ck_values = _batch_compute_Ck_gpu(population_gpu, config)
@@ -680,6 +701,8 @@ def memetic_tabu_search(
                 p1, p2 = int(parent_indices[i, 0]), int(parent_indices[i, 1])
                 children_gpu[i, :k] = population_gpu[p1, :k]
                 children_gpu[i, k:] = population_gpu[p2, k:]
+                if fixed_indices_cp is not None:
+                    children_gpu[i, fixed_indices_cp] = population_gpu[p1, fixed_indices_cp]
             else:
                 idx = int(parent_indices[i, 0])
                 children_gpu[i] = population_gpu[idx].copy()
@@ -687,10 +710,14 @@ def memetic_tabu_search(
         p_mut = 1.0 / N
         mutation_mask = cp.random.random((batch_size, N)) < p_mut
         children_gpu = cp.where(mutation_mask, -children_gpu, children_gpu)
+        if fixed_indices_cp is not None:
+            children_gpu[:, fixed_indices_cp] = fixed_values_cp
 
         improved_children, child_energies = _batch_tabu_search_gpu(
             children_gpu, config, max_iter=N
         )
+        if fixed_indices_cp is not None:
+            improved_children[:, fixed_indices_cp] = fixed_values_cp
 
         batch_best_idx = int(cp.argmin(child_energies))
         batch_best_energy = int(child_energies[batch_best_idx])

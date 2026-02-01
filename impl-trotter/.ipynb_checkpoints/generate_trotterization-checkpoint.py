@@ -155,7 +155,9 @@ def dcqo_flexible_circuit_v2(
             qa, qb, qc, qd = int(term[0]), int(term[1]), int(term[2]), int(term[3])
             theta_cd = term[4] * lam_dot * dt
             r_yzzz(theta_cd, q[qa], q[qb], q[qc], q[qd])
-            # ... (include all permutations as in your original code) ...
+            r_yzzz(theta_cd, q[qb], q[qa], q[qc], q[qd])
+            r_yzzz(theta_cd, q[qc], q[qa], q[qb], q[qd])
+            r_yzzz(theta_cd, q[qd], q[qa], q[qb], q[qc])
 
         # --- Layer 2: Problem Hamiltonian (UPDATED) ---
         
@@ -183,6 +185,241 @@ def dcqo_flexible_circuit_v2(
         rx(2.0 * (1.0 - lam) * dt, q)
 
     mz(q)
+
+# ---------------------------------------------------------------------------
+# 2b. Fixed first two qubits as |1⟩|1⟩ (bits "11")
+# ---------------------------------------------------------------------------
+
+FIXED_FIRST_TWO_PREFIX = "11"
+"""When using reduced circuit, prepend this to sampled bitstrings to get full N-bit string."""
+
+def reduce_hamiltonian_fix_first_two(terms_1, terms_2, terms_3, terms_4):
+    """
+    Reduce the full N-qubit Hamiltonian to N-2 qubits by fixing qubits 0 and 1 to |1⟩
+    (bit 1 → σ^z eigenvalue -1). Returns (t1_red, t2_red, t3_red, t4_red) with indices
+    remapped so original index i (≥2) becomes i-2. Terms involving only qubits 0,1 become
+    a constant (dropped; they do not affect which state minimizes energy).
+    """
+    z_fixed = -1  # eigenvalue of σ^z for |1⟩
+    t1_red = {}
+    t2_red = {}
+    t3_red = {}
+    t4_red = {}
+
+    def to_new(i):
+        return None if i in (0, 1) else i - 2
+
+    for term in terms_1:
+        i, w = int(term[0]), term[1]
+        if i in (0, 1):
+            continue  # constant z_fixed * w, dropped
+        t1_red[to_new(i)] = t1_red.get(to_new(i), 0.0) + w
+
+    for term in terms_2:
+        i, j, w = int(term[0]), int(term[1]), term[2]
+        ni, nj = to_new(i), to_new(j)
+        if ni is None and nj is None:
+            continue
+        if ni is None and nj is not None:
+            t1_red[nj] = t1_red.get(nj, 0.0) + (z_fixed * w)
+        elif ni is not None and nj is None:
+            t1_red[ni] = t1_red.get(ni, 0.0) + (z_fixed * w)
+        else:
+            key = (min(ni, nj), max(ni, nj))
+            t2_red[key] = t2_red.get(key, 0.0) + w
+
+    for term in terms_3:
+        i, j, k = int(term[0]), int(term[1]), int(term[2])
+        w = term[3]
+        ni, nj, nk = to_new(i), to_new(j), to_new(k)
+        fixed_count = (1 if ni is None else 0) + (1 if nj is None else 0) + (1 if nk is None else 0)
+        coeff = (z_fixed ** fixed_count) * w
+        idxs = [ni, nj, nk]
+        active = [x for x in idxs if x is not None]
+        if len(active) == 3:
+            key = tuple(sorted(active))
+            t3_red[key] = t3_red.get(key, 0.0) + coeff
+        elif len(active) == 2:
+            key = (min(active), max(active))
+            t2_red[key] = t2_red.get(key, 0.0) + coeff
+        elif len(active) == 1:
+            t1_red[active[0]] = t1_red.get(active[0], 0.0) + coeff
+        # else constant, drop
+
+    for term in terms_4:
+        qa, qb, qc, qd = int(term[0]), int(term[1]), int(term[2]), int(term[3])
+        w = term[4]
+        na, nb, nc, nd = to_new(qa), to_new(qb), to_new(qc), to_new(qd)
+        fixed_count = sum(1 for x in (na, nb, nc, nd) if x is None)
+        coeff = (z_fixed ** fixed_count) * w
+        active = [x for x in (na, nb, nc, nd) if x is not None]
+        if len(active) == 4:
+            key = tuple(sorted(active))
+            t4_red[key] = t4_red.get(key, 0.0) + coeff
+        elif len(active) == 3:
+            key = tuple(sorted(active))
+            t3_red[key] = t3_red.get(key, 0.0) + coeff
+        elif len(active) == 2:
+            key = (min(active), max(active))
+            t2_red[key] = t2_red.get(key, 0.0) + coeff
+        elif len(active) == 1:
+            t1_red[active[0]] = t1_red.get(active[0], 0.0) + coeff
+        # else constant, drop
+
+    t1_list = [[i, float(w)] for i, w in t1_red.items()]
+    t2_list = [[i, j, float(w)] for (i, j), w in t2_red.items()]
+    t3_list = [[i, j, k, float(w)] for (i, j, k), w in t3_red.items()]
+    t4_list = [[a, b, c, d, float(w)] for (a, b, c, d), w in t4_red.items()]
+    return t1_list, t2_list, t3_list, t4_list
+
+
+def prepend_fixed_prefix_to_counts(sample_result, prefix: str = FIXED_FIRST_TWO_PREFIX):
+    """
+    Return a counts dict with keys prefix + bitstring for each bitstring in sample_result.
+    Use this so that calculate_energy receives full N-bit strings when the circuit
+    was run with N-2 qubits and fixed first two bits.
+    """
+    return {prefix + bs: count for bs, count in sample_result.items()}
+
+
+# ---------------------------------------------------------------------------
+# 2b2. Skew-symmetry: reduce to (N+1)/2 qubits when N is odd
+# ---------------------------------------------------------------------------
+
+def reduce_hamiltonian_skew_symmetry(terms_1, terms_2, terms_3, terms_4, N: int):
+    """
+    Reduce the N-qubit Hamiltonian to qubits 0..a by substituting Z_i (i > a)
+    with (-1)^(i-a) Z_{2a-i}, where a = (N-1)/2 (0-based). Requires N odd.
+    Returns (t1_red, t2_red, t3_red, t4_red) with indices only in [0, a].
+    """
+    if N % 2 == 0:
+        raise ValueError("Skew-symmetry reduction requires odd N")
+    a = (N - 1) // 2
+    t1_red = {}
+    t2_red = {}
+    t3_red = {}
+    t4_red = {}
+
+    def map_idx(i):
+        i = int(i)
+        return i if i <= a else 2 * a - i
+
+    def phase_exponent(indices):
+        return sum((idx - a) for idx in indices if idx > a)
+
+    for term in terms_1:
+        i, w = int(term[0]), term[1]
+        exp = phase_exponent([i])
+        coeff = ((-1) ** exp) * w
+        i_new = map_idx(i)
+        t1_red[i_new] = t1_red.get(i_new, 0.0) + coeff
+
+    for term in terms_2:
+        i, j, w = int(term[0]), int(term[1]), term[2]
+        exp = phase_exponent([i, j])
+        coeff = ((-1) ** exp) * w
+        i_new, j_new = map_idx(i), map_idx(j)
+        key = (min(i_new, j_new), max(i_new, j_new))
+        t2_red[key] = t2_red.get(key, 0.0) + coeff
+
+    for term in terms_3:
+        i, j, k = int(term[0]), int(term[1]), int(term[2])
+        w = term[3]
+        exp = phase_exponent([i, j, k])
+        coeff = ((-1) ** exp) * w
+        i_new, j_new, k_new = map_idx(i), map_idx(j), map_idx(k)
+        key = tuple(sorted((i_new, j_new, k_new)))
+        t3_red[key] = t3_red.get(key, 0.0) + coeff
+
+    for term in terms_4:
+        qa, qb, qc, qd = int(term[0]), int(term[1]), int(term[2]), int(term[3])
+        w = term[4]
+        exp = phase_exponent([qa, qb, qc, qd])
+        coeff = ((-1) ** exp) * w
+        na, nb, nc, nd = map_idx(qa), map_idx(qb), map_idx(qc), map_idx(qd)
+        key = tuple(sorted((na, nb, nc, nd)))
+        t4_red[key] = t4_red.get(key, 0.0) + coeff
+
+    t1_list = [[i, float(w)] for i, w in t1_red.items()]
+    t2_list = [[i, j, float(w)] for (i, j), w in t2_red.items()]
+    t3_list = [[i, j, k, float(w)] for (i, j, k), w in t3_red.items()]
+    t4_list = [[a, b, c, d, float(w)] for (a, b, c, d), w in t4_red.items()]
+    return t1_list, t2_list, t3_list, t4_list
+
+
+def expand_skew_symmetric_bitstring(bitstring: str, N: int) -> str:
+    """
+    Expand a reduced bitstring (length (N+1)//2, indices 0..a) to full N-bit string
+    using skew-symmetry s_i = (-1)^(i-a) s_{2a-i}: for i > a, bit[i] = bit[2a-i] XOR ((i-a) % 2).
+    """
+    if N % 2 == 0:
+        raise ValueError("Skew-symmetry expansion requires odd N")
+    a = (N - 1) // 2
+    n_reduced = a + 1
+    if len(bitstring) != n_reduced:
+        raise ValueError(f"Expected bitstring length {n_reduced} for N={N}, got {len(bitstring)}")
+    out = list(bitstring)
+    for i in range(a + 1, N):
+        mirror = 2 * a - i
+        flip = (i - a) % 2
+        out.append(str(int(bitstring[mirror]) ^ flip))
+    return "".join(out)
+
+
+def expand_skew_symmetric_counts(sample_result, N: int) -> dict:
+    """
+    Return a counts dict with full N-bit string keys by expanding each reduced
+    bitstring via expand_skew_symmetric_bitstring. Use after sampling the
+    skew-reduced circuit so downstream calculate_energy and MTS see full-length bitstrings.
+    """
+    if N % 2 == 0:
+        raise ValueError("Skew-symmetry expansion requires odd N")
+    result = {}
+    for bs, count in sample_result.items():
+        full = expand_skew_symmetric_bitstring(bs, N)
+        result[full] = result.get(full, 0) + count
+    return result
+
+
+def get_image_hamiltonian_skew_reduced(N: int):
+    """
+    Image Hamiltonian reduced by skew-symmetry (N must be odd). Returns
+    (t1r, t2r, t3r, t4r, num_qubits) where num_qubits = (N+1)//2. Callers must
+    use expand_skew_symmetric_bitstring or expand_skew_symmetric_counts after sampling.
+    """
+    if N % 2 == 0:
+        raise ValueError("Skew-symmetry requires odd N")
+    t1, t2, t3, t4 = get_image_hamiltonian(N)
+    t1r, t2r, t3r, t4r = reduce_hamiltonian_skew_symmetry(t1, t2, t3, t4, N)
+    num_qubits = (N + 1) // 2
+    return t1r, t2r, t3r, t4r, num_qubits
+
+
+# ---------------------------------------------------------------------------
+# 2c. Interaction sets G2, G4 (paper Eq. 15 / tutorial Exercise 4)
+# ---------------------------------------------------------------------------
+
+def get_interactions(N: int):
+    """
+    Generate two-body (G2) and four-body (G4) interaction index sets for the
+    LABS DCQO circuit (paper Eq. 15; tutorial Exercise 4).
+    Used with compute_theta(t, dt, total_time, N, G2, G4) from labs_utils
+    for the CD angle schedule.
+    Returns:
+        G2: list of [i, i+k] for i = 0..N-3, k = 1..floor((N-i-1)/2)
+        G4: list of [i, i+t, i+k, i+k+t] for the triple loop (i, t, k)
+    """
+    G2 = []
+    G4 = []
+    for i in range(N - 2):
+        for k in range(1, (N - i - 1) // 2 + 1):
+            G2.append([i, i + k])
+    for i in range(N - 3):
+        for t in range(1, (N - i - 2) // 2 + 1):
+            for k in range(t + 1, N - i - t):
+                G4.append([i, i + t, i + k, i + k + t])
+    return G2, G4
+
 
 # ---------------------------------------------------------------------------
 # 3. Helper to Generate LABS Hamiltonian
@@ -218,7 +455,12 @@ def get_labs_hamiltonian(N):
     # Return empty lists for 1-body and 3-body terms
     return [], t2_list, [], t4_list
 
-def calculate_energy(counts, t1, t2, t3, t4):
+def calculate_energy(counts, t1=None, t2=None, t3=None, t4=None):
+    """
+    Compute average and min LABS energy over bitstrings in counts.
+    counts: dict-like (bitstring -> count) or cudaq SampleResult.
+    t1..t4 are unused (kept for API compatibility).
+    """
     min_energy = float('inf')
     avg_energy = 0.0
     total_shots = sum(counts.values())
@@ -333,70 +575,74 @@ if __name__ == "__main__":
     steps = 10         # Trotter steps
     total_time = 2.0   # Annealing time
     shots = 2000       # Sampling shots
-    
+    # First two qubits are fixed as |1⟩|1⟩ (bits "11"); circuit uses N-2 qubits only.
+    num_qubits_circuit = N - 2
+
     # Annealing Schedule
     t_points = np.linspace(0, total_time, steps)
     dt = total_time / steps
     lambda_sched = np.sin((np.pi/2) * (t_points / total_time))**2
-    lambda_dot_sched = (np.pi/total_time) * np.sin(np.pi * t_points / total_time) / 2.0 
-    
+    lambda_dot_sched = (np.pi/total_time) * np.sin(np.pi * t_points / total_time) / 2.0
+
     print(f"--- Comparing Hamiltonians for N={N} ---\n")
 
-    # ---------------- 1. Default LABS Hamiltonian ----------------
+    # ---------------- 1. Default LABS Hamiltonian (full N qubits, no reduction) ----------------
     print(">> Processing Default LABS Hamiltonian...")
     d_t1, d_t2, d_t3, d_t4 = get_labs_hamiltonian(N)
-    
+
     print(f"   Terms: {len(d_t1)} (1-body), {len(d_t2)} (2-body), {len(d_t3)} (3-body), {len(d_t4)} (4-body)")
-    
-    # Flatten strictly for C++ kernel compatibility
+
     d_flat = (
         [list(map(float, t)) for t in d_t1],
         [list(map(float, t)) for t in d_t2],
         [list(map(float, t)) for t in d_t3],
         [list(map(float, t)) for t in d_t4]
     )
-    
+
     res_default = cudaq.sample(
-        dcqo_flexible_circuit_v2, N, steps, 
-        d_flat[0], d_flat[1], d_flat[2], d_flat[3], 
+        dcqo_flexible_circuit_v2, N, steps,
+        d_flat[0], d_flat[1], d_flat[2], d_flat[3],
         lambda_sched.tolist(), lambda_dot_sched.tolist(), dt,
         shots_count=shots
     )
-    
     avg_energy_default, min_energy_default = calculate_energy(res_default, d_t1, d_t2, d_t3, d_t4)
     print(f"   Result: <E> = {avg_energy_default:.4f}")
     print(f"   Top bitstring: {res_default.most_probable()}\n")
 
-    # ---------------- 2. Image H_f Hamiltonian ----------------
-    print(">> Processing Image H_f Hamiltonian...")
+    # ---------------- 2. Image H_f Hamiltonian (first two bits fixed as 11, N-2 qubits) ----------------
+    print(">> Processing Image H_f Hamiltonian (first two bits fixed as 11)...")
     i_t1, i_t2, i_t3, i_t4 = get_image_hamiltonian(N)
-    
-    print(f"   Terms: {len(i_t1)} (1-body), {len(i_t2)} (2-body), {len(i_t3)} (3-body), {len(i_t4)} (4-body)")
+    i_t1r, i_t2r, i_t3r, i_t4r = reduce_hamiltonian_fix_first_two(i_t1, i_t2, i_t3, i_t4)
+
+    print(f"   Full terms: {len(i_t1)} (1-body), {len(i_t2)} (2-body), {len(i_t3)} (3-body), {len(i_t4)} (4-body)")
+    print(f"   Reduced terms: {len(i_t1r)} (1-body), {len(i_t2r)} (2-body), {len(i_t3r)} (3-body), {len(i_t4r)} (4-body)")
 
     i_flat = (
-        [list(map(float, t)) for t in i_t1],
-        [list(map(float, t)) for t in i_t2],
-        [list(map(float, t)) for t in i_t3],
-        [list(map(float, t)) for t in i_t4]
+        [list(map(float, t)) for t in i_t1r],
+        [list(map(float, t)) for t in i_t2r],
+        [list(map(float, t)) for t in i_t3r],
+        [list(map(float, t)) for t in i_t4r]
     )
 
     res_image = cudaq.sample(
-        dcqo_flexible_circuit_v2, N, steps, 
-        i_flat[0], i_flat[1], i_flat[2], i_flat[3], 
+        dcqo_flexible_circuit_v2, num_qubits_circuit, steps,
+        i_flat[0], i_flat[1], i_flat[2], i_flat[3],
         lambda_sched.tolist(), lambda_dot_sched.tolist(), dt,
         shots_count=shots
     )
-    
-    avg_energy_image, min_energy_image = calculate_energy(res_image, i_t1, i_t2, i_t3, i_t4)
+    full_counts_image = prepend_fixed_prefix_to_counts(res_image)
+    avg_energy_image, min_energy_image = calculate_energy(full_counts_image, i_t1, i_t2, i_t3, i_t4)
     print(f"   Result: <E> = {avg_energy_image:.4f}")
-    print(f"   Top bitstring: {res_image.most_probable()}\n")
-    
+    print(f"   Top bitstring: {FIXED_FIRST_TWO_PREFIX}{res_image.most_probable()}\n")
+
     # ---------------- Comparison Summary ----------------
     print("--- Summary ---")
     print(f"{avg_energy_default} vs {avg_energy_image}")
     print(f"{min_energy_default} vs {min_energy_image}")
-    
-    if res_default.most_probable() == res_image.most_probable():
+
+    top_default = res_default.most_probable()
+    top_image = FIXED_FIRST_TWO_PREFIX + res_image.most_probable()
+    if top_default == top_image:
         print("Convergence: Both Hamiltonians found the SAME most probable bitstring.")
     else:
         print("Convergence: The Hamiltonians favored DIFFERENT bitstrings.")

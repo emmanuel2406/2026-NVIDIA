@@ -1,0 +1,5 @@
+method,best_energy,best_merit,time_s,throughput,pop_mean_energy
+Random Search,54,3.703704,0.018,10902.08,181.78
+Classical MTS,34,5.882353,0.123,163.16,99.47
+QE-MTS (Image H),34,5.882353,5.084,3.93,136.53
+QE-MTS (LABS H),34,5.882353,1.382,14.47,120.80

@@ -283,6 +283,145 @@ def prepend_fixed_prefix_to_counts(sample_result, prefix: str = FIXED_FIRST_TWO_
 
 
 # ---------------------------------------------------------------------------
+# 2b2. Skew-symmetry: reduce to (N+1)/2 qubits when N is odd
+# ---------------------------------------------------------------------------
+
+def reduce_hamiltonian_skew_symmetry(terms_1, terms_2, terms_3, terms_4, N: int):
+    """
+    Reduce the N-qubit Hamiltonian to qubits 0..a by substituting Z_i (i > a)
+    with (-1)^(i-a) Z_{2a-i}, where a = (N-1)/2 (0-based). Requires N odd.
+    Returns (t1_red, t2_red, t3_red, t4_red) with indices only in [0, a].
+    """
+    if N % 2 == 0:
+        raise ValueError("Skew-symmetry reduction requires odd N")
+    a = (N - 1) // 2
+    t1_red = {}
+    t2_red = {}
+    t3_red = {}
+    t4_red = {}
+
+    def map_idx(i):
+        i = int(i)
+        return i if i <= a else 2 * a - i
+
+    def phase_exponent(indices):
+        return sum((idx - a) for idx in indices if idx > a)
+
+    for term in terms_1:
+        i, w = int(term[0]), term[1]
+        exp = phase_exponent([i])
+        coeff = ((-1) ** exp) * w
+        i_new = map_idx(i)
+        t1_red[i_new] = t1_red.get(i_new, 0.0) + coeff
+
+    for term in terms_2:
+        i, j, w = int(term[0]), int(term[1]), term[2]
+        exp = phase_exponent([i, j])
+        coeff = ((-1) ** exp) * w
+        i_new, j_new = map_idx(i), map_idx(j)
+        key = (min(i_new, j_new), max(i_new, j_new))
+        t2_red[key] = t2_red.get(key, 0.0) + coeff
+
+    for term in terms_3:
+        i, j, k = int(term[0]), int(term[1]), int(term[2])
+        w = term[3]
+        exp = phase_exponent([i, j, k])
+        coeff = ((-1) ** exp) * w
+        i_new, j_new, k_new = map_idx(i), map_idx(j), map_idx(k)
+        key = tuple(sorted((i_new, j_new, k_new)))
+        t3_red[key] = t3_red.get(key, 0.0) + coeff
+
+    for term in terms_4:
+        qa, qb, qc, qd = int(term[0]), int(term[1]), int(term[2]), int(term[3])
+        w = term[4]
+        exp = phase_exponent([qa, qb, qc, qd])
+        coeff = ((-1) ** exp) * w
+        na, nb, nc, nd = map_idx(qa), map_idx(qb), map_idx(qc), map_idx(qd)
+        key = tuple(sorted((na, nb, nc, nd)))
+        t4_red[key] = t4_red.get(key, 0.0) + coeff
+
+    t1_list = [[i, float(w)] for i, w in t1_red.items()]
+    t2_list = [[i, j, float(w)] for (i, j), w in t2_red.items()]
+    t3_list = [[i, j, k, float(w)] for (i, j, k), w in t3_red.items()]
+    t4_list = [[a, b, c, d, float(w)] for (a, b, c, d), w in t4_red.items()]
+    return t1_list, t2_list, t3_list, t4_list
+
+
+def expand_skew_symmetric_bitstring(bitstring: str, N: int) -> str:
+    """
+    Expand a reduced bitstring (length (N+1)//2, indices 0..a) to full N-bit string
+    using skew-symmetry s_i = (-1)^(i-a) s_{2a-i}: for i > a, bit[i] = bit[2a-i] XOR ((i-a) % 2).
+    """
+    if N % 2 == 0:
+        raise ValueError("Skew-symmetry expansion requires odd N")
+    a = (N - 1) // 2
+    n_reduced = a + 1
+    if len(bitstring) != n_reduced:
+        raise ValueError(f"Expected bitstring length {n_reduced} for N={N}, got {len(bitstring)}")
+    out = list(bitstring)
+    for i in range(a + 1, N):
+        mirror = 2 * a - i
+        flip = (i - a) % 2
+        out.append(str(int(bitstring[mirror]) ^ flip))
+    return "".join(out)
+
+
+def expand_skew_symmetric_counts(sample_result, N: int) -> dict:
+    """
+    Return a counts dict with full N-bit string keys by expanding each reduced
+    bitstring via expand_skew_symmetric_bitstring. Use after sampling the
+    skew-reduced circuit so downstream calculate_energy and MTS see full-length bitstrings.
+    """
+    if N % 2 == 0:
+        raise ValueError("Skew-symmetry expansion requires odd N")
+    result = {}
+    for bs, count in sample_result.items():
+        full = expand_skew_symmetric_bitstring(bs, N)
+        result[full] = result.get(full, 0) + count
+    return result
+
+
+def get_image_hamiltonian_skew_reduced(N: int):
+    """
+    Image Hamiltonian reduced by skew-symmetry (N must be odd). Returns
+    (t1r, t2r, t3r, t4r, num_qubits) where num_qubits = (N+1)//2. Callers must
+    use expand_skew_symmetric_bitstring or expand_skew_symmetric_counts after sampling.
+    """
+    if N % 2 == 0:
+        raise ValueError("Skew-symmetry requires odd N")
+    t1, t2, t3, t4 = get_image_hamiltonian(N)
+    t1r, t2r, t3r, t4r = reduce_hamiltonian_skew_symmetry(t1, t2, t3, t4, N)
+    num_qubits = (N + 1) // 2
+    return t1r, t2r, t3r, t4r, num_qubits
+
+
+# ---------------------------------------------------------------------------
+# 2c. Interaction sets G2, G4 (paper Eq. 15 / tutorial Exercise 4)
+# ---------------------------------------------------------------------------
+
+def get_interactions(N: int):
+    """
+    Generate two-body (G2) and four-body (G4) interaction index sets for the
+    LABS DCQO circuit (paper Eq. 15; tutorial Exercise 4).
+    Used with compute_theta(t, dt, total_time, N, G2, G4) from labs_utils
+    for the CD angle schedule.
+    Returns:
+        G2: list of [i, i+k] for i = 0..N-3, k = 1..floor((N-i-1)/2)
+        G4: list of [i, i+t, i+k, i+k+t] for the triple loop (i, t, k)
+    """
+    G2 = []
+    G4 = []
+    for i in range(N - 2):
+        for k in range(1, (N - i - 1) // 2 + 1):
+            G2.append([i, i + k])
+    for i in range(N - 3):
+        for t in range(1, (N - i - 2) // 2 + 1):
+            for k in range(t + 1, N - i - t):
+                G4.append([i, i + t, i + k, i + k + t])
+    return G2, G4
+
+
+# ---------------------------------------------------------------------------
 # 3. Helper to Generate LABS Hamiltonian
 # ---------------------------------------------------------------------------
 
