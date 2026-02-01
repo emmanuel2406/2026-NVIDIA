@@ -4,7 +4,8 @@ LABS Benchmark Runner
 
 Runs different methods for values of N specified as input.
 Uses eval_util from tutorial_notebook/evals for validation and energy computation.
-Methods are stubbed for now - implement real algorithms as they become available.
+Methods mts and trotter use the same implementations as impl-trotter/qe_mts_image_hamiltonian.py
+(GPU MTS when available; trotter = QE-MTS Image Hamiltonian pipeline).
 
 Usage:
     python run_benchmark.py 3 4 5 10 20
@@ -21,12 +22,14 @@ import sys
 import time
 from pathlib import Path
 
-# Add tutorial evals and benchmarks dir to path
+# Add tutorial evals, benchmarks, impl-trotter, impl-mts to path
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 EVALS_DIR = REPO_ROOT / "tutorial_notebook" / "evals"
 sys.path.insert(0, str(EVALS_DIR))
 sys.path.insert(0, str(SCRIPT_DIR))
+sys.path.insert(0, str(REPO_ROOT / "impl-trotter"))
+sys.path.insert(0, str(REPO_ROOT / "impl-mts"))
 
 from eval_util import (
     compute_energy,
@@ -126,29 +129,48 @@ def _run_qmf_h100(N: int) -> list[int]:
     return seq
 
 
-def _run_mts(N: int) -> list[int]:
-    """Memetic Tabu Search from impl-mts/main.py. Returns sequence only (list of ±1)."""
-    mts_path = REPO_ROOT / "impl-mts" / "main.py"
-    if not mts_path.exists():
-        raise FileNotFoundError(f"impl-mts/main.py not found (required for mts method)")
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("mts_module", mts_path)
-    mts_module = importlib.util.module_from_spec(spec)
-    if str(REPO_ROOT) not in sys.path:
-        sys.path.insert(0, str(REPO_ROOT))
-    spec.loader.exec_module(mts_module)
-    random.seed(42)
-    if hasattr(mts_module, "np"):
-        mts_module.np.random.seed(42)
-    best_s, _best_energy, _population = mts_module.memetic_tabu_search(
+def _run_mts_qe(
+    N: int,
+    population_size: int = 50,
+    max_generations: int = 100,
+    seed: int = 42,
+) -> tuple[list[int], float]:
+    """MTS via impl-trotter/qe_mts_image_hamiltonian.run_mts_single (GPU if available, else CPU).
+    Returns (sequence, time_sec). Same backend as single-N comparison script."""
+    from qe_mts_image_hamiltonian import run_mts_single
+    return run_mts_single(
         N=N,
-        population_size=50,
-        max_generations=100,
+        population_size=population_size,
+        max_generations=max_generations,
         p_combine=0.9,
-        initial_population=None,
+        seed=seed,
         verbose=False,
     )
-    return best_s.tolist() if hasattr(best_s, "tolist") else list(best_s)
+
+
+def _run_trotter_qe(
+    N: int,
+    n_shots: int = 500,
+    trotter_steps: int = 10,
+    total_time: float = 2.0,
+    population_size: int = 50,
+    max_generations: int = 100,
+    seed: int = 42,
+) -> tuple[list[int], float]:
+    """QE-MTS (Image Hamiltonian) via qe_mts_image_hamiltonian.run_trotter_qe_single.
+    Returns (sequence, time_sec). Same pipeline as single-N comparison script."""
+    from qe_mts_image_hamiltonian import run_trotter_qe_single
+    return run_trotter_qe_single(
+        N=N,
+        n_shots=n_shots,
+        trotter_steps=trotter_steps,
+        total_time=total_time,
+        population_size=population_size,
+        max_generations=max_generations,
+        p_combine=0.9,
+        seed=seed,
+        verbose=False,
+    )
 
 
 
@@ -210,18 +232,36 @@ def _run_classical_gpu(N: int) -> list[int]:
     return best_s.tolist() if hasattr(best_s, "tolist") else list(best_s)
 
 
-def run_method(method: str, N: int, use_gpu_mts: bool = False, use_quantum_gpu: bool = False) -> tuple[list[int], float]:
-    """Dispatch to the appropriate method. Returns (sequence, time_sec). Timing via timed_run.
-    When use_gpu_mts=True, trotter and qmf use H100-optimized MTS for their classical refinement step.
-    When use_quantum_gpu=True, trotter and qmf use their full H100-optimized code kernels (cudaq nvidia + GPU MTS)."""
+def run_method(
+    method: str,
+    N: int,
+    use_gpu_mts: bool = False,
+    use_quantum_gpu: bool = False,
+    population_size: int = 50,
+    max_generations: int = 100,
+    n_shots: int = 500,
+    trotter_steps: int = 10,
+    total_time: float = 2.0,
+    seed: int = 42,
+) -> tuple[list[int], float]:
+    """Dispatch to the appropriate method. Returns (sequence, time_sec).
+    mts and trotter use impl-trotter/qe_mts_image_hamiltonian (same as single-N comparison script).
+    When use_gpu_mts=True, qmf/nvidia use H100-optimized MTS for classical refinement.
+    When use_quantum_gpu=True, qmf/nvidia use full H100-optimized code kernels."""
     if method == "mts":
-        return timed_run(_run_mts, N)
+        return _run_mts_qe(N, population_size=population_size, max_generations=max_generations, seed=seed)
     if method == "random":
         return timed_run(_run_random, N)
     if method == "trotter":
-        if use_quantum_gpu:
-            return timed_run(_run_trotter_h100, N)
-        return timed_run(_run_trotter, N, use_gpu_mts)
+        return _run_trotter_qe(
+            N,
+            n_shots=n_shots,
+            trotter_steps=trotter_steps,
+            total_time=total_time,
+            population_size=population_size,
+            max_generations=max_generations,
+            seed=seed,
+        )
     if method == "qmf":
         if use_quantum_gpu:
             return timed_run(_run_qmf_h100, N)
@@ -261,11 +301,25 @@ def parse_n_values(args: list[str]) -> list[int]:
     return sorted(set(values))
 
 
-def run_benchmark(n_values: list[int], methods: list[str], results_path: Path, use_gpu_mts: bool = False, use_quantum_gpu: bool = False, trials: int = 1) -> None:
+def run_benchmark(
+    n_values: list[int],
+    methods: list[str],
+    results_path: Path,
+    use_gpu_mts: bool = False,
+    use_quantum_gpu: bool = False,
+    trials: int = 1,
+    population_size: int = 50,
+    max_generations: int = 100,
+    n_shots: int = 500,
+    trotter_steps: int = 10,
+    total_time: float = 2.0,
+    seed: int = 42,
+) -> None:
     """Run all (N, method) combinations and write results to CSV.
     When trials > 1, each (N, method) is run trials times and quantitative stats (energy, F_N, normalized_distance, time_sec) are reported as arithmetic mean.
-    When use_gpu_mts=True, trotter and qmf use H100-optimized MTS for their classical refinement step.
-    When use_quantum_gpu=True, trotter and qmf use their full H100-optimized code kernels."""
+    mts and trotter use impl-trotter/qe_mts_image_hamiltonian (population_size, max_generations, n_shots, trotter_steps, total_time, seed).
+    When use_gpu_mts=True, qmf/nvidia use H100-optimized MTS for classical refinement.
+    When use_quantum_gpu=True, qmf/nvidia use full H100-optimized code kernels."""
     rows = []
 
     for N in n_values:
@@ -282,7 +336,18 @@ def run_benchmark(n_values: list[int], methods: list[str], results_path: Path, u
 
             for _ in range(trials):
                 try:
-                    seq, time_sec = run_method(method, N, use_gpu_mts=use_gpu_mts, use_quantum_gpu=use_quantum_gpu)
+                    seq, time_sec = run_method(
+                        method,
+                        N,
+                        use_gpu_mts=use_gpu_mts,
+                        use_quantum_gpu=use_quantum_gpu,
+                        population_size=population_size,
+                        max_generations=max_generations,
+                        n_shots=n_shots,
+                        trotter_steps=trotter_steps,
+                        total_time=total_time,
+                        seed=seed,
+                    )
                     energy = compute_energy(seq)
                     F_N = compute_merit_factor(seq, energy)
                     seq_rl = sequence_to_runlength(seq)
@@ -366,6 +431,48 @@ def main():
         metavar="T",
         help="Run each (N, method) T times and report arithmetic mean of energy, F_N, normalized_distance, time_sec (default: 1)",
     )
+    parser.add_argument(
+        "--population-size",
+        type=int,
+        default=50,
+        metavar="P",
+        help="MTS/trotter population size (default: 50)",
+    )
+    parser.add_argument(
+        "--max-generations",
+        type=int,
+        default=100,
+        metavar="G",
+        help="MTS/trotter max generations (default: 100)",
+    )
+    parser.add_argument(
+        "--n-shots",
+        type=int,
+        default=500,
+        metavar="S",
+        help="Trotter/QE-MTS quantum shots (default: 500)",
+    )
+    parser.add_argument(
+        "--trotter-steps",
+        type=int,
+        default=10,
+        metavar="K",
+        help="Trotter/QE-MTS Trotter steps (default: 10)",
+    )
+    parser.add_argument(
+        "--total-time",
+        type=float,
+        default=2.0,
+        metavar="T",
+        help="Trotter/QE-MTS annealing total time (default: 2.0)",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        metavar="R",
+        help="Random seed for mts/trotter (default: 42)",
+    )
     parser.add_argument("n_values", nargs="*", default=[], help="N values, e.g. 3 4 5 10 or 3-10")
     args = parser.parse_args()
 
@@ -394,7 +501,20 @@ def main():
     if args.trials < 1:
         parser.error("--trials must be >= 1")
     print(f"Trials per (N, method): {args.trials}")
-    run_benchmark(n_values, methods, results_path, use_gpu_mts=use_gpu_mts, use_quantum_gpu=use_quantum_gpu, trials=args.trials)
+    run_benchmark(
+        n_values,
+        methods,
+        results_path,
+        use_gpu_mts=use_gpu_mts,
+        use_quantum_gpu=use_quantum_gpu,
+        trials=args.trials,
+        population_size=args.population_size,
+        max_generations=args.max_generations,
+        n_shots=args.n_shots,
+        trotter_steps=args.trotter_steps,
+        total_time=args.total_time,
+        seed=args.seed,
+    )
 
 
 if __name__ == "__main__":

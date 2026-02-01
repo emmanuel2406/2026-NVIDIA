@@ -313,6 +313,83 @@ def run_mts(N: int, population_size: int, max_generations: int,
                                        fixed_indices=fixed_indices, fixed_values=fixed_values)
 
 
+def run_mts_single(
+    N: int,
+    population_size: int = 50,
+    max_generations: int = 100,
+    p_combine: float = 0.9,
+    seed: int = 42,
+    verbose: bool = False,
+) -> Tuple[List[int], float]:
+    """
+    Run MTS once (GPU if available, else CPU) and return (sequence_as_list, time_sec).
+    For use by benchmarks/run_benchmark.py and eval_util. Sequence is list of ±1.
+    """
+    import random
+    random.seed(seed)
+    np.random.seed(seed)
+    if GPU_AVAILABLE:
+        try:
+            import cupy as cp
+            cp.random.seed(seed)
+        except Exception:
+            pass
+    start = time.perf_counter()
+    best_s, best_energy, _ = run_mts(
+        N=N,
+        population_size=population_size,
+        max_generations=max_generations,
+        p_combine=p_combine,
+        initial_population=None,
+        verbose=verbose,
+    )
+    elapsed = time.perf_counter() - start
+    seq_list = best_s.tolist() if hasattr(best_s, "tolist") else list(best_s)
+    return seq_list, elapsed
+
+
+def run_trotter_qe_single(
+    N: int,
+    n_shots: int = 500,
+    trotter_steps: int = 10,
+    total_time: float = 2.0,
+    population_size: int = 50,
+    max_generations: int = 100,
+    p_combine: float = 0.9,
+    seed: int = 42,
+    verbose: bool = False,
+) -> Tuple[List[int], float]:
+    """
+    Run QE-MTS (Image Hamiltonian): sample_quantum_population + MTS with fixed [0,1].
+    Returns (best_sequence_as_list, total_time_sec). For use by benchmarks/run_benchmark.py.
+    """
+    import random
+    random.seed(seed)
+    np.random.seed(seed)
+    start = time.perf_counter()
+    quantum_population, _ = sample_quantum_population(
+        N=N,
+        n_shots=n_shots,
+        trotter_steps=trotter_steps,
+        total_time=total_time,
+        verbose=verbose,
+    )
+    initial_pop = quantum_population[:population_size]
+    best_s, best_energy, _ = run_mts(
+        N=N,
+        population_size=population_size,
+        max_generations=max_generations,
+        p_combine=p_combine,
+        initial_population=initial_pop,
+        verbose=verbose,
+        fixed_indices=[0, 1],
+        fixed_values=np.array([-1, -1], dtype=np.int32),
+    )
+    elapsed = time.perf_counter() - start
+    seq_list = best_s.tolist() if hasattr(best_s, "tolist") else list(best_s)
+    return seq_list, elapsed
+
+
 # ============================================================================
 # Quantum Circuit Sampling with Image Hamiltonian
 # ============================================================================
@@ -941,17 +1018,14 @@ def create_comparison_plot(results: List[BenchmarkResult], config: RunConfig,
     # Row 2: Initial population distributions
     # Row 3: Final population distributions
     # Row 4: Autocorrelations of best sequences
-    print("WTF")
     fig = plt.figure(figsize=(4 * n_methods, 16))
 
-    print("WTF2")
     methods = [r.method_name for r in results]
     energies = [r.best_energy for r in results]
     merits = [r.best_merit for r in results]
     times = [r.total_time_s for r in results]
 
     # --- Row 1: Summary Bar Charts ---
-    print("WTF3")
     # Plot 1: Best Energy Comparison
     ax1 = fig.add_subplot(4, 3, 1)
     bars1 = ax1.bar(range(n_methods), energies, color=colors, alpha=0.7, edgecolor='black')

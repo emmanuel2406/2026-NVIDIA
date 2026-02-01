@@ -150,11 +150,11 @@ def plot_energies_bar(
         if opt is not None:
             ax.axhline(y=opt, color="red", linestyle="--", linewidth=1.5, label="Optimal energy")
         ax.set_xticks(x)
-        ax.set_xticklabels(methods, rotation=45, ha="right")
-        ax.set_ylabel("Energy")
-        ax.set_title(f"{title_prefix} — N = {N}")
+        ax.set_xticklabels(methods, rotation=45, ha="right", fontsize=8)
+        ax.set_ylabel("Energy", fontsize=9)
+        ax.set_title(f"{title_prefix} — N = {N}", fontsize=10)
         if opt is not None:
-            ax.legend(loc="upper right", fontsize=8)
+            ax.legend(loc="upper right", fontsize=7)
         ax.grid(True, alpha=0.3, axis="y")
 
     for j in range(idx + 1, len(axes_flat)):
