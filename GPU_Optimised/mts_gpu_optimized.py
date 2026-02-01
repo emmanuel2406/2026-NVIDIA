@@ -75,26 +75,33 @@ void compute_delta_energy_all(const int* s, const long long* Ck_values,
 # CUDA kernel for batch energy computation
 COMPUTE_ENERGY_BATCH_KERNEL = cp.RawKernel(r'''
 extern "C" __global__
-void compute_energy_batch(const int* sequences, long long* energies, 
+void compute_energy_batch(const int* sequences, unsigned long long* energies,
                           int N, int batch_size) {
     int seq_idx = blockIdx.x;
     if (seq_idx >= batch_size) return;
-    
+
     const int* s = sequences + seq_idx * N;
-    long long energy = 0;
-    
+
+    // Use shared memory for reduction
+    __shared__ unsigned long long shared_energy;
+    if (threadIdx.x == 0) {
+        shared_energy = 0;
+    }
+    __syncthreads();
+
     // Each thread computes a different k value
     for (int k = threadIdx.x + 1; k < N; k += blockDim.x) {
         long long Ck = 0;
         for (int i = 0; i < N - k; i++) {
             Ck += s[i] * s[i + k];
         }
-        atomicAdd(&energy, Ck * Ck);
+        atomicAdd(&shared_energy, (unsigned long long)(Ck * Ck));
     }
-    
+    __syncthreads();
+
     // Only thread 0 writes the final result
     if (threadIdx.x == 0) {
-        energies[seq_idx] = energy;
+        energies[seq_idx] = shared_energy;
     }
 }
 ''', 'compute_energy_batch')
@@ -181,7 +188,7 @@ def compute_energy_gpu(s: cp.ndarray, Ck_values: cp.ndarray = None) -> int:
 def compute_energy_batch_gpu(sequences: cp.ndarray, config: GPUConfig) -> cp.ndarray:
     """Batch compute energies for multiple sequences"""
     batch_size, N = sequences.shape
-    energies = cp.zeros(batch_size, dtype=cp.int64)
+    energies = cp.zeros(batch_size, dtype=cp.uint64)
     
     threads_per_block = min(config.block_size, N)
     blocks = batch_size
@@ -344,10 +351,11 @@ def memetic_tabu_search_gpu(N: int,
                            p_combine: float = 0.9,
                            config: GPUConfig = None,
                            batch_tabu: bool = True,
-                           target_energy: int = None) -> Tuple[np.ndarray, int, List[np.ndarray]]:
+                           target_energy: int = None,
+                           initial_population: List[np.ndarray] = None) -> Tuple[np.ndarray, int, List[np.ndarray]]:
     """
     GPU-Accelerated Memetic Tabu Search
-    
+
     Args:
         N: Sequence length
         population_size: Population size
@@ -356,6 +364,8 @@ def memetic_tabu_search_gpu(N: int,
         config: GPU configuration
         batch_tabu: Whether to batch tabu search operations
         target_energy: Target energy for early stopping
+        initial_population: Optional list of initial sequences (as numpy arrays of ±1)
+                           to seed the population (e.g., from QAOA samples)
     """
     if config is None:
         config = GPUConfig()
@@ -373,10 +383,22 @@ def memetic_tabu_search_gpu(N: int,
     
     # Create streams for pipeline parallelism
     streams = [cp.cuda.Stream() for _ in range(config.num_streams)]
-    
+
     # Initialize population on GPU
-    population_gpu = cp.random.choice(cp.array([-1, 1], dtype=cp.int32), 
-                                     size=(population_size, N))
+    if initial_population is not None:
+        print(f"[MTS-GPU] Using provided initial population of {len(initial_population)} sequences")
+        # Convert numpy arrays to GPU and pad/truncate to population_size
+        init_seqs = [seq.astype(np.int32) for seq in initial_population[:population_size]]
+        if len(init_seqs) < population_size:
+            # Pad with random sequences if needed
+            num_random = population_size - len(init_seqs)
+            print(f"[MTS-GPU] Padding with {num_random} random sequences")
+            random_seqs = np.random.choice([-1, 1], size=(num_random, N)).astype(np.int32)
+            init_seqs.extend([random_seqs[i] for i in range(num_random)])
+        population_gpu = cp.array(np.stack(init_seqs), dtype=cp.int32)
+    else:
+        population_gpu = cp.random.choice(cp.array([-1, 1], dtype=cp.int32),
+                                         size=(population_size, N))
     
     # Compute initial energies in batch
     energies_gpu = compute_energy_batch_gpu(population_gpu, config)
