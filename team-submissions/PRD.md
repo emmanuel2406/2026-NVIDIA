@@ -69,13 +69,13 @@ We also reviewed the following approaches:
 
 ### Literature Review
 * **Reference:**  [Evidence of scaling advantage for the quantum approximate optimization algorithm on a classically intractable problem, Shaydulin et al., https://www.science.org/doi/10.1126/sciadv.adm6761]
-* **Relevance:** [How does this paper support your plan?]
+* **Relevance:**
     This paper serves as the primary justification for our "Fixed Parameter QAOA + QMF" approach. It explicitly demonstrates that while standard QAOA is powerful, the combination of QAOA with Quantum Minimum Finding (QMF) yields the best known empirical scaling for the LABS problem.
 
 * **Reference:** [Digitized-counterdiabatic quantum approximate optimization
   algorithm, Chandarana et al.,
   https://journals.aps.org/prresearch/abstract/10.1103/PhysRevResearch.4.013141]
-* **Relevance:** [How does this paper support your plan?]
+* **Relevance:**
   This paper introduces the digitized counterdiabatic quantum approximate
   optimization algorithm, which is a key component of our approach and provides
   information on its improvements over standard QAOA. It shows that adding CD
@@ -85,12 +85,16 @@ We also reviewed the following approaches:
 * **Reference:** [Molecular docking via DC-QAOA, NVIDIA Corporation and
   Affiliates,
   https://nvidia.github.io/cuda-quantum/latest/applications/python/digitized_counterdiabatic_qaoa.html]
-* **Relevance:** [How does this paper support your plan?]
+* **Relevance:**
   This example provides a CUDAQ implementation of the digitized counterdiabatic QAOA algorithm, which is a key component of our approach.
 
 * **Reference:** [A Quantum Algorithm for Finding the Minimum, Durr and Hoyer, https://arxiv.org/abs/quant-ph/9607014] 
-* **Relevance:** [How does this paper support your plan?]
+* **Relevance:**
   This is the foundational paper for the QMF routine we are using, there's also an implementation of the algorithm in CUDAQ in the NVIDIA examples.
+
+* **Reference:** [Low Autocorrelation Binary Sequences,Packebusch and Mertens, https://arxiv.org/pdf/1512.0247]
+* **Relevance:**
+  This has a table with precomputed golden answers for sequence lengths up to 66, which saves us time to quickly add an evaluation server, that matches the optimal sequences and energies.
 
 ---
 
@@ -117,7 +121,7 @@ We also reviewed the following approaches:
 
 ### Unit Testing Strategy
 * **Framework:** : pytest
-* **AI Hallucination Guardrails:** We test the solution for multiple values of n and in our case, ensure that it finds the optimal energy solution referenced by our golden answers in `evals/answers.csv`.
+* **AI Hallucination Guardrails:** We test the solution for multiple values of n and in our case, ensure that it finds the optimal energy solution referenced by our golden answers in `evals/answers.csv`, which has already been peer-reviewed and stress-tested in the paper [2016, Packebush et al.](https://arxiv.org/pdf/1512.0247) with 100 citations.
 
 ### Core Correctness Checks
 * **Check 1 (Symmetry):** 
