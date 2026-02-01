@@ -1,0 +1,62 @@
+{
+  "config": {
+    "N": 20,
+    "population_size": 50,
+    "max_generations": 50,
+    "n_shots": 200,
+    "trotter_steps": 5,
+    "total_time": 2.0,
+    "p_combine": 0.9,
+    "seed": 42,
+    "timestamp": "20260201_084054",
+    "gpu_available": true
+  },
+  "results": [
+    {
+      "method_name": "Random Search",
+      "best_energy": 54,
+      "best_merit": 3.7037037037037037,
+      "best_sequence": "11000110010010111111",
+      "total_time_s": 0.018102645874023438,
+      "samples_or_generations": 200,
+      "throughput": 11048.108734590665,
+      "population_mean_energy": 181.78,
+      "population_min_energy": 54,
+      "population_max_energy": 1030,
+      "additional_metrics": null
+    },
+    {
+      "method_name": "Classical MTS",
+      "best_energy": 26,
+      "best_merit": 7.6923076923076925,
+      "best_sequence": "10011100101110100000",
+      "total_time_s": 0.16946911811828613,
+      "samples_or_generations": 50,
+      "throughput": 295.0390050717145,
+      "population_mean_energy": 109.28,
+      "population_min_energy": 34,
+      "population_max_energy": 446,
+      "additional_metrics": null
+    },
+    {
+      "method_name": "QE-MTS (Image Hamiltonian)",
+      "best_energy": 34,
+      "best_merit": 5.882352941176471,
+      "best_sequence": "01001010001000111110",
+      "total_time_s": 1.3836562633514404,
+      "samples_or_generations": 50,
+      "throughput": 36.13614256975347,
+      "population_mean_energy": 82.56,
+      "population_min_energy": 34,
+      "population_max_energy": 434,
+      "additional_metrics": {
+        "quantum_sampling_time_s": 1.2959260940551758,
+        "mts_time_s": 0.08772873878479004,
+        "quantum_initial_mean_energy": 187.88,
+        "quantum_initial_min_energy": 70,
+        "n_unique_quantum_states": 200,
+        "circuit_execution_time_s": 1.2776110172271729
+      }
+    }
+  ]
+}

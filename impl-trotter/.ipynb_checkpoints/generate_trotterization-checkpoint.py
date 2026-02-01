@@ -137,7 +137,7 @@ def dcqo_flexible_circuit_v2(
     dt: float
 ):
     q = cudaq.qvector(num_qubits)
-    h(q) 
+    h(q)
 
     for step in range(num_steps):
         lam = lambda_sched[step]
