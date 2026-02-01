@@ -367,6 +367,13 @@ def run_hybrid_h100_optimized(
                 for _ in range(count):
                     quantum_population.append(seq.copy())
 
+        # Sync GPU so cudaq work is done before CuPy MTS runs (avoids allocator/heap conflicts)
+        try:
+            import cupy as _cp
+            _cp.cuda.Stream.null.synchronize()
+        except Exception:
+            pass
+
         memetic_tabu_search = mts_module.memetic_tabu_search
         random.seed(42)
         np.random.seed(42)

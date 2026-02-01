@@ -618,15 +618,24 @@ def memetic_tabu_search(
 
     streams = [cp.cuda.Stream() for _ in range(config.num_streams)]
 
-    # Initialize population
+    # Initialize population (ensure host numpy, contiguous, shape (N,) to avoid heap/allocator issues)
     if initial_population is not None:
         if verbose:
             print(f"[MTS-GPU] Using provided initial population of {len(initial_population)} sequences")
-        init_seqs = [seq.astype(np.int32) for seq in initial_population[:population_size]]
+        init_seqs = []
+        for seq in initial_population[:population_size]:
+            if hasattr(seq, "get"):  # CuPy array
+                arr = cp.asnumpy(seq).astype(np.int32)
+            else:
+                arr = np.asarray(seq, dtype=np.int32)
+            arr = arr.reshape(-1)[:N]
+            if arr.size < N:
+                arr = np.pad(arr, (0, N - arr.size), constant_values=1)
+            init_seqs.append(np.ascontiguousarray(arr.copy()))
         if len(init_seqs) < population_size:
             num_random = population_size - len(init_seqs)
             random_seqs = np.random.choice([-1, 1], size=(num_random, N)).astype(np.int32)
-            init_seqs.extend([random_seqs[i] for i in range(num_random)])
+            init_seqs.extend([random_seqs[i].copy() for i in range(num_random)])
         population_gpu = cp.array(np.stack(init_seqs), dtype=cp.int32)
     else:
         if verbose:

@@ -162,10 +162,12 @@ def build_quantum_population_and_best(
     best_idx = int(cp.argmin(energies_gpu))
     best_bs = bitstrings[best_idx]
 
-    # Build population list: repeat each sequence by its count, cap at population_size
+    # Build population list: repeat each sequence by its count, cap at population_size.
+    # Use explicit host copies so no GPU buffer refs leak; sync before return to avoid
+    # corrupted size vs. prev_size when mixing cudaq/CuPy.
     population: List[np.ndarray] = []
     for i in range(num_unique):
-        seq_np = np.array(matrix[i], dtype=np.int32)
+        seq_np = np.asarray(matrix[i], dtype=np.int32, order="C").copy()
         for _ in range(counts[i]):
             population.append(seq_np.copy())
             if len(population) >= population_size:
@@ -173,4 +175,7 @@ def build_quantum_population_and_best(
         if len(population) >= population_size:
             break
 
+    # Ensure all GPU work and frees complete before returning (avoids heap corruption)
+    if _CP_AVAILABLE and cp is not None:
+        cp.cuda.Stream.null.synchronize()
     return population, best_bs
