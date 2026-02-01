@@ -35,46 +35,64 @@ ANSWERS_CSV = EVALS_DIR / "answers.csv"
 RESULTS_CSV = SCRIPT_DIR / "results.csv"
 
 # ---------------------------------------------------------------------------
+# Timing wrapper (add perf to any function run)
+# ---------------------------------------------------------------------------
+
+def timed_run(fn, *args, **kwargs) -> tuple:
+    """Run fn(*args, **kwargs) and return (result, time_sec). Use to add perf timing to any method."""
+    start = time.perf_counter()
+    result = fn(*args, **kwargs)
+    elapsed = time.perf_counter() - start
+    return result, elapsed
+
+
+# ---------------------------------------------------------------------------
 # Stubbed methods (replace with real implementations)
 # ---------------------------------------------------------------------------
 
-METHODS = ["mts", "tabu", "random"]
+METHODS = ["mts", "tabu", "random", "trotter"]
 
 
-def run_mts(N: int) -> tuple[list[int], float]:
-    """Stub: Memetic Tabu Search. Returns (sequence, time_sec)."""
-    start = time.perf_counter()
-    # Stub: return random sequence
-    seq = [random.choice([-1, 1]) for _ in range(N)]
-    elapsed = time.perf_counter() - start
-    return seq, elapsed
+def _run_trotter(N: int) -> list[int]:
+    """Hybrid QAOA+Grover+MTS from impl-qmf. Returns sequence only (timing via timed_run)."""
+    impl_qmf_dir = REPO_ROOT / "impl-qmf"
+    if not (impl_qmf_dir / "hybrid.py").exists():
+        raise FileNotFoundError(f"impl-qmf/hybrid.py not found (required for trotter method)")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("hybrid", impl_qmf_dir / "hybrid.py")
+    hybrid = importlib.util.module_from_spec(spec)
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    spec.loader.exec_module(hybrid)
+    seq, _ = hybrid.run_hybrid(N, verbose=False)
+    return seq
 
 
-def run_tabu(N: int) -> tuple[list[int], float]:
-    """Stub: Tabu Search. Returns (sequence, time_sec)."""
-    start = time.perf_counter()
-    # Stub: return random sequence
-    seq = [random.choice([-1, 1]) for _ in range(N)]
-    elapsed = time.perf_counter() - start
-    return seq, elapsed
+def _run_mts(N: int) -> list[int]:
+    """Stub: Memetic Tabu Search. Returns sequence only."""
+    return [random.choice([-1, 1]) for _ in range(N)]
 
 
-def run_random(N: int) -> tuple[list[int], float]:
-    """Stub: Random search baseline. Returns (sequence, time_sec)."""
-    start = time.perf_counter()
-    seq = [random.choice([-1, 1]) for _ in range(N)]
-    elapsed = time.perf_counter() - start
-    return seq, elapsed
+def _run_tabu(N: int) -> list[int]:
+    """Stub: Tabu Search. Returns sequence only."""
+    return [random.choice([-1, 1]) for _ in range(N)]
+
+
+def _run_random(N: int) -> list[int]:
+    """Stub: Random search baseline. Returns sequence only."""
+    return [random.choice([-1, 1]) for _ in range(N)]
 
 
 def run_method(method: str, N: int) -> tuple[list[int], float]:
-    """Dispatch to the appropriate method. Returns (sequence, time_sec)."""
+    """Dispatch to the appropriate method. Returns (sequence, time_sec). Timing via timed_run."""
     if method == "mts":
-        return run_mts(N)
+        return timed_run(_run_mts, N)
     if method == "tabu":
-        return run_tabu(N)
+        return timed_run(_run_tabu, N)
     if method == "random":
-        return run_random(N)
+        return timed_run(_run_random, N)
+    if method == "trotter":
+        return timed_run(_run_trotter, N)
     raise ValueError(f"Unknown method: {method}")
 
 
