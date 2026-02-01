@@ -19,15 +19,6 @@
 
 ## 2. The Architecture
 **Owner:** Project Lead
-
-### Choice of Quantum Algorithm
-* **Algorithm:** [Identify the specific algorithm or ansatz]
-    * *Example:* "Quantum Approximate Optimization Algorithm (QAOA) with a hardware-efficient ansatz."
-    * *Example:* "Variational Quantum Eigensolver (VQE) using a custom warm-start initialization."
-
-* **Motivation:** [Why this algorithm? Connect it to the problem structure or learning goals.]
-    * *Example (Metric-driven):* "We chose QAOA because we believe the layer depth corresponds well to the correlation length of the LABS sequences."
-    *  Example (Skills-driven):* "We selected VQE to maximize skill transfer. Our senior members want to test a novel 'warm-start' adaptation, while the standard implementation provides an accessible ramp-up for our members new to quantum variational methods."
    
 For this hackathon we have chosen to explore two different approaches: one using
 the trotterization method and another using QAOA. By exploring both methods, we
