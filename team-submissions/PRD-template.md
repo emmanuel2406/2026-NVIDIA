@@ -86,9 +86,8 @@ reasons for choosing this approach:
 **Owner:** Quality Assurance PIC
 
 ### Unit Testing Strategy
-* **Framework:** [e.g., `pytest`, `unittest`]
-* **AI Hallucination Guardrails:** [How do you know the AI code is right?]
-    * *Example:* "We will require AI-generated kernels to pass a 'property test' (Hypothesis library) ensuring outputs are always within theoretical energy bounds before they are integrated."
+* **Framework:** : pytest
+* **AI Hallucination Guardrails:** We test the solution for multiple values of n and in our case, ensure that it finds the optimal energy solution referenced by our golden answers in `evals/answers.csv`.
 
 ### Core Correctness Checks
 * **Check 1 (Symmetry):** [Describe a specific physics check]
