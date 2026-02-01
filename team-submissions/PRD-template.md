@@ -18,7 +18,7 @@
 | Role | Name | GitHub Handle | Discord Handle
 | :--- | :--- | :--- | :--- |
 | **Project Lead** (Architect) | [Emmanuel Rassou] | [@emmanuel2406] | [@Luna_Meme] |
-| **GPU Acceleration PIC** (Builder) | [Tarun Sasirekha] | [@] | [@handle] |
+| **GPU Acceleration PIC** (Builder) | [Tarun Sasirekha] | [@tarunsasirekha] | [@tarunsasirekha_50776] |
 | **Quality Assurance PIC** (Verifier) | [Anmay Gupta] | [@AnmayG] | [@AnmayG] |
 | **Technical Marketing PIC** (Storyteller) | [Hugo Mackay] | [@hugomackay] | [@hugomackay] |
 
