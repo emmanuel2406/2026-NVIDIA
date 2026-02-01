@@ -50,21 +50,36 @@ def timed_run(fn, *args, **kwargs) -> tuple:
 # Stubbed methods (replace with real implementations)
 # ---------------------------------------------------------------------------
 
-METHODS = ["mts", "random", "trotter"]
+METHODS = ["mts", "random", "trotter", "qmf"]
+
+
+def _run_qmf(N: int) -> list[int]:
+    """QAOA+Grover+MTS hybrid from impl-qmf/main.py. Returns sequence only (timing via timed_run)."""
+    qmf_path = REPO_ROOT / "impl-qmf" / "main.py"
+    if not qmf_path.exists():
+        raise FileNotFoundError(f"impl-qmf/main.py not found (required for qmf method)")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("qmf_main", qmf_path)
+    qmf_module = importlib.util.module_from_spec(spec)
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    spec.loader.exec_module(qmf_module)
+    seq, _ = qmf_module.run_hybrid(N, verbose=False)
+    return seq
 
 
 def _run_trotter(N: int) -> list[int]:
-    """Hybrid QAOA+Grover+MTS from impl-qmf. Returns sequence only (timing via timed_run)."""
-    impl_qmf_dir = REPO_ROOT / "impl-qmf"
-    if not (impl_qmf_dir / "hybrid.py").exists():
-        raise FileNotFoundError(f"impl-qmf/hybrid.py not found (required for trotter method)")
+    """Trotter/hybrid QAOA+Grover+MTS from impl-qmf/main.py. Returns sequence only (timing via timed_run)."""
+    qmf_path = REPO_ROOT / "impl-qmf" / "main.py"
+    if not qmf_path.exists():
+        raise FileNotFoundError(f"impl-qmf/main.py not found (required for trotter method)")
     import importlib.util
-    spec = importlib.util.spec_from_file_location("hybrid", impl_qmf_dir / "hybrid.py")
-    hybrid = importlib.util.module_from_spec(spec)
+    spec = importlib.util.spec_from_file_location("trotter_hybrid", qmf_path)
+    mod = importlib.util.module_from_spec(spec)
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
-    spec.loader.exec_module(hybrid)
-    seq, _ = hybrid.run_hybrid(N, verbose=False)
+    spec.loader.exec_module(mod)
+    seq, _ = mod.run_hybrid(N, verbose=False)
     return seq
 
 
@@ -107,6 +122,8 @@ def run_method(method: str, N: int) -> tuple[list[int], float]:
         return timed_run(_run_random, N)
     if method == "trotter":
         return timed_run(_run_trotter, N)
+    if method == "qmf":
+        return timed_run(_run_qmf, N)
     raise ValueError(f"Unknown method: {method}")
 
 
