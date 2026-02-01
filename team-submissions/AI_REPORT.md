@@ -4,14 +4,12 @@
 **The Workflow:**
 
 
-<img width="1381" height="257" alt="Screenshot 2026-02-01 at 4 20 38 AM" src="https://github.com/user-attachments/assets/101d6207-32d9-4054-b74e-83dd342cd69f" />
+<img width="1366" height="259" alt="Screenshot 2026-02-01 at 5 23 43 AM" src="https://github.com/user-attachments/assets/714bcee1-3d54-499d-8f2e-d99639534b07" />
+
  
-  
-  We organized our AI agents using a single n8n workflow, which better represents how the system actually runs compared to using separate tools or chat instances. All agents are connected in one executable pipeline rather than working in isolation.
+This workflow is designed as an end-to-end execution and verification pipeline using n8n. It begins with a manual trigger and a configuration step that defines the execution environment and parameters. The workflow then ensures required directories exist and launches an orchestrator process over SSH, which coordinates the run and outputs a structured JSON description of the task. A unique run directory is created, after which domain-specific agents (such as the quantum seed agent and MTS agent) are executed sequentially via SSH. Once execution completes, a verification agent evaluates the results and writes a verification report, which is parsed to determine whether the run passes or fails.
 
-The workflow is managed by an orchestrator agent that handles configuration, run IDs, and execution order. Domain-specific agents (such as QAOA and MTS agents) run their respective code modules. Using this setup, we can directly run all code files across different environments—berv, qBraid, or locally—without changing the overall workflow structure.
-
-A verification agent checks the results and branches the workflow into success or failure paths, where summaries, logs, and history are automatically handled.
+Based on this verification decision, the workflow branches automatically. If the run passes, key metrics are read, a success summary is generated, and the result is appended to a persistent history log before sending a success notification. If the run fails, logs are collected, a failure summary is built, the failure is recorded in history, and a failure notification is triggered. This design ensures that execution, validation, logging, and reporting are fully automated, reproducible, and environment-agnostic while remaining easy to extend and debug.
 
 For development, we primarily used Claude for coding and implementation, while ChatGPT was used for research, learning core concepts, and reasoning through design decisions. This combination allowed us to move quickly while keeping both the code and the underlying understanding aligned.
 
@@ -67,6 +65,7 @@ In early iterations, the AI occasionally suggested APIs or helper functions that
 
 ### What we changed
 Rather than repeatedly correcting the AI, we changed our process:
+-created a `skills.md` file containing:
   - verified CUDA-Q API references,
   - examples copied from official NVIDIA documentation,
   - explicit notes on unsupported features,
