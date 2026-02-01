@@ -227,8 +227,11 @@ def memetic_tabu_search_cpu(N: int, population_size: int = 100,
                             initial_population: List[np.ndarray] = None,
                             verbose: bool = True,
                             fixed_indices: List[int] = None,
-                            fixed_values: np.ndarray = None) -> Tuple[np.ndarray, int, List[np.ndarray]]:
-    """CPU memetic tabu search (fallback). fixed_indices/fixed_values: positions that must not be changed."""
+                            fixed_values: np.ndarray = None,
+                            energy_history_out: Optional[List[Tuple[int, int]]] = None,
+                            history_interval: int = 1) -> Tuple[np.ndarray, int, List[np.ndarray]]:
+    """CPU memetic tabu search (fallback). fixed_indices/fixed_values: positions that must not be changed.
+    If energy_history_out is a list, append (generation, best_energy) at each history_interval generations."""
     import random
 
     if verbose:
@@ -260,6 +263,9 @@ def memetic_tabu_search_cpu(N: int, population_size: int = 100,
     best_idx = np.argmin(energies)
     best_s = population[best_idx].copy()
     best_energy = energies[best_idx]
+
+    if energy_history_out is not None:
+        energy_history_out.append((0, int(best_energy)))
 
     start_time = time.time()
     fixed_set = set(fixed_indices) if fixed_indices else set()
@@ -294,9 +300,15 @@ def memetic_tabu_search_cpu(N: int, population_size: int = 100,
         population[replace_idx] = improved_child
         energies[replace_idx] = child_energy
 
+        if energy_history_out is not None and (gen + 1) % history_interval == 0:
+            energy_history_out.append((gen + 1, int(best_energy)))
+
         if verbose and gen % 50 == 0:
             elapsed = time.time() - start_time
             print(f"[MTS-CPU] Gen {gen}/{max_generations}: best_E={best_energy}, elapsed={elapsed:.1f}s")
+
+    if energy_history_out is not None and max_generations % history_interval != 0:
+        energy_history_out.append((max_generations, int(best_energy)))
 
     return best_s, best_energy, population
 
@@ -1372,6 +1384,176 @@ def run_multi_n(
 
 
 # ============================================================================
+# Convergence Rate Experiment: Energy vs Iteration (Quantum Seed vs Random Seed)
+# ============================================================================
+
+def run_convergence_for_n(
+    N: int,
+    config: RunConfig,
+    seed_type: str,
+    history_interval: int = 10,
+    verbose: bool = False,
+) -> List[Tuple[int, int]]:
+    """
+    Run MTS for a single N with either 'random' or 'quantum' seed and return
+    energy history [(iteration, best_energy), ...]. Uses CPU MTS to record
+    per-generation best energy.
+    """
+    import random
+    energy_history: List[Tuple[int, int]] = []
+    np.random.seed(config.seed)
+    random.seed(config.seed)
+
+    if seed_type == "random":
+        memetic_tabu_search_cpu(
+            N=N,
+            population_size=config.population_size,
+            max_generations=config.max_generations,
+            p_combine=config.p_combine,
+            initial_population=None,
+            verbose=verbose,
+            fixed_indices=None,
+            fixed_values=None,
+            energy_history_out=energy_history,
+            history_interval=history_interval,
+        )
+    elif seed_type == "quantum":
+        quantum_population, _ = sample_quantum_population(
+            N=N,
+            n_shots=config.n_shots,
+            trotter_steps=config.trotter_steps,
+            total_time=config.total_time,
+            verbose=verbose,
+        )
+        initial_pop = quantum_population[: config.population_size]
+        memetic_tabu_search_cpu(
+            N=N,
+            population_size=config.population_size,
+            max_generations=config.max_generations,
+            p_combine=config.p_combine,
+            initial_population=initial_pop,
+            verbose=verbose,
+            fixed_indices=[0, 1],
+            fixed_values=np.array([-1, -1], dtype=np.int32),
+            energy_history_out=energy_history,
+            history_interval=history_interval,
+        )
+    else:
+        raise ValueError("seed_type must be 'random' or 'quantum'")
+    return energy_history
+
+
+def run_convergence_experiment_multi_n(
+    n_values: List[int],
+    population_size: int,
+    max_generations: int,
+    n_shots: int,
+    trotter_steps: int,
+    total_time: float = 2.0,
+    p_combine: float = 0.9,
+    seed: int = 42,
+    output_dir: Path = None,
+    history_interval: int = 10,
+    verbose: bool = True,
+) -> Path:
+    """
+    Run convergence experiment over multiple N: for each N, run MTS with
+    Quantum Seed and with Random Seed, record energy vs iteration, and plot
+    convergence (Energy vs Iteration) for comparison.
+    """
+    output_dir = output_dir or (_impl_trotter_dir / "results")
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Collect (N, seed_type, iterations, energies) for CSV and plots
+    data: Dict[str, List[Tuple[int, List[int], List[int]]]] = {}
+    for N in n_values:
+        config = RunConfig(
+            N=N,
+            population_size=population_size,
+            max_generations=max_generations,
+            n_shots=n_shots,
+            trotter_steps=trotter_steps,
+            total_time=total_time,
+            p_combine=p_combine,
+            seed=seed,
+            output_dir=output_dir,
+        )
+        if verbose:
+            print(f"\n[CONVERGENCE] N={N}: running Random Seed...")
+        hist_random = run_convergence_for_n(
+            N=N,
+            config=config,
+            seed_type="random",
+            history_interval=history_interval,
+            verbose=verbose,
+        )
+        np.random.seed(seed)
+        import random
+        random.seed(seed)
+        if verbose:
+            print(f"[CONVERGENCE] N={N}: running Quantum Seed...")
+        hist_quantum = run_convergence_for_n(
+            N=N,
+            config=config,
+            seed_type="quantum",
+            history_interval=history_interval,
+            verbose=verbose,
+        )
+        iterations_r = [p[0] for p in hist_random]
+        energies_r = [p[1] for p in hist_random]
+        iterations_q = [p[0] for p in hist_quantum]
+        energies_q = [p[1] for p in hist_quantum]
+        data[str(N)] = [
+            ("Random Seed", iterations_r, energies_r),
+            ("Quantum Seed", iterations_q, energies_q),
+        ]
+
+    # Save CSV: N, seed_type, iteration, energy
+    csv_path = output_dir / "qe_mts_convergence_multi_n.csv"
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["N", "seed_type", "iteration", "energy"])
+        for N_str, series_list in data.items():
+            for seed_type, iters, energies in series_list:
+                for i, e in zip(iters, energies):
+                    writer.writerow([N_str, seed_type, i, e])
+    if verbose:
+        print(f"\n[OUTPUT] Convergence CSV saved to: {csv_path}")
+
+    # Plot: one subplot per N, Energy vs Iteration, two lines (Quantum vs Random)
+    n_plots = len(n_values)
+    n_cols = min(3, n_plots)
+    n_rows = (n_plots + n_cols - 1) // n_cols
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
+    if n_plots == 1:
+        axes = np.array([axes])
+    axes = axes.flatten()
+    for idx, N in enumerate(n_values):
+        ax = axes[idx]
+        N_str = str(N)
+        for label, iters, energies in data[N_str]:
+            color = "C1" if "Quantum" in label else "C0"
+            ax.plot(iters, energies, label=label, color=color, alpha=0.8)
+        ax.set_xlabel("Iteration")
+        ax.set_ylabel("Best Energy")
+        ax.set_title(f"N = {N}")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+    for j in range(len(n_values), len(axes)):
+        axes[j].set_visible(False)
+    plt.suptitle("Convergence: Energy vs Iteration — Quantum Seed vs Random Seed", fontsize=12)
+    plt.tight_layout()
+    plot_path = output_dir / "qe_mts_convergence_multi_n.png"
+    plt.savefig(plot_path, dpi=150, bbox_inches="tight")
+    plt.close()
+    if verbose:
+        print(f"[OUTPUT] Convergence plot saved to: {plot_path}")
+
+    return csv_path
+
+
+# ============================================================================
 # Main Entry Point
 # ============================================================================
 
@@ -1406,6 +1588,8 @@ def parse_args():
     parser.add_argument("--n-values", type=str, default=None,
                         help="Run for multiple N: comma-separated (10,15,20) or range (10-15). "
                              "Overrides single N positional arg and produces aggregated energy plots.")
+    parser.add_argument("--convergence", action="store_true",
+                        help="Run convergence experiment: Energy vs Iteration for Quantum Seed vs Random Seed over multiple N (use with --n-values).")
 
     return parser.parse_args()
 
