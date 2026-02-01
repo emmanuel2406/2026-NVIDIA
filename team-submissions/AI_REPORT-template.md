@@ -35,7 +35,7 @@ This made our hackathon experience not easier, but more challenging and more val
 
 The examples below show how we used AI effectively — including what worked, what failed, and the concrete steps we took to stay fast, correct, and in control.
 
----
+
 
 ## Win — AI Saved Us Hours
 
