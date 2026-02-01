@@ -36,7 +36,7 @@ from eval_util import (
     normalized_energy_distance,
 )
 
-from plot_utils import plot_normalized_distance_vs_n
+from plot_utils import plot_normalized_distance_vs_n, plot_energies_bar
 
 ANSWERS_CSV = EVALS_DIR / "answers.csv"
 RESULTS_CSV = SCRIPT_DIR / "results.csv"
@@ -338,6 +338,9 @@ def run_benchmark(n_values: list[int], methods: list[str], results_path: Path, u
     # Plot normalized_distance vs N (one line per method)
     plot_path = results_path.with_suffix(".png")
     plot_normalized_distance_vs_n(results_path, out_path=plot_path)
+    # Plot energies per method as bar chart with optimal energy line
+    energies_plot_path = results_path.with_stem(results_path.stem + "_energies").with_suffix(".png")
+    plot_energies_bar(results_path, out_path=energies_plot_path)
 
 
 def main():

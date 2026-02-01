@@ -79,3 +79,91 @@ def plot_normalized_distance_vs_n(
     else:
         plt.show()
     plt.close(fig)
+
+
+def plot_energies_bar(
+    csv_path: Path,
+    out_path: Path | None = None,
+    title_prefix: str = "Energy by method",
+) -> None:
+    """
+    Read benchmark CSV and plot energy per method as bar charts (one subplot per N),
+    with a horizontal red dotted line for the optimal energy.
+
+    Args:
+        csv_path: Path to results CSV (N, method, energy, optimal_energy, ...).
+        out_path: If set, save figure to this path; otherwise show interactively.
+        title_prefix: Prefix for subplot titles (suffix will be "N = {n}").
+    """
+    # Group by N: N -> { method -> energy, optimal_energy }
+    by_n: dict[int, dict] = {}
+
+    with open(csv_path, newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            try:
+                n_val = int(row["N"])
+            except (KeyError, ValueError):
+                continue
+            method = row.get("method", "").strip()
+            energy_str = row.get("energy", "").strip()
+            opt_str = row.get("optimal_energy", "").strip()
+            if energy_str == "" or energy_str.lower().startswith("error"):
+                continue
+            try:
+                energy = float(energy_str)
+            except ValueError:
+                continue
+            opt_energy = None
+            if opt_str and not opt_str.lower().startswith("error"):
+                try:
+                    opt_energy = float(opt_str)
+                except ValueError:
+                    pass
+
+            if n_val not in by_n:
+                by_n[n_val] = {"methods": {}, "optimal_energy": opt_energy}
+            by_n[n_val]["methods"][method] = energy
+            if opt_energy is not None:
+                by_n[n_val]["optimal_energy"] = opt_energy
+
+    if not by_n:
+        print("No valid energy data to plot.")
+        return
+
+    n_values = sorted(by_n.keys())
+    n_sub = len(n_values)
+    n_cols = min(3, n_sub)
+    n_rows = (n_sub + n_cols - 1) // n_cols
+    fig, axes = plt.subplots(n_rows, n_cols, squeeze=False)
+    axes_flat = axes.ravel()
+
+    for idx, N in enumerate(n_values):
+        ax = axes_flat[idx]
+        data = by_n[N]
+        methods = list(data["methods"].keys())
+        energies = [data["methods"][m] for m in methods]
+        opt = data.get("optimal_energy")
+
+        x = range(len(methods))
+        bars = ax.bar(x, energies, color="steelblue", edgecolor="navy", alpha=0.85)
+        if opt is not None:
+            ax.axhline(y=opt, color="red", linestyle="--", linewidth=1.5, label="Optimal energy")
+        ax.set_xticks(x)
+        ax.set_xticklabels(methods, rotation=45, ha="right")
+        ax.set_ylabel("Energy")
+        ax.set_title(f"{title_prefix} — N = {N}")
+        if opt is not None:
+            ax.legend(loc="upper right", fontsize=8)
+        ax.grid(True, alpha=0.3, axis="y")
+
+    for j in range(idx + 1, len(axes_flat)):
+        axes_flat[j].set_visible(False)
+
+    fig.tight_layout()
+    if out_path:
+        fig.savefig(out_path, dpi=150, bbox_inches="tight")
+        print(f"Saved energy bar plot to {out_path}")
+    else:
+        plt.show()
+    plt.close(fig)
