@@ -29,9 +29,9 @@ These checks were integrated into the verification stage of the workflow, allowi
 
  **The "Vibe" Log:**
 
-Even though AI handled a significant portion of the coding, we learned that **AI is only effective if the team using it understands what is right and what is wrong**. To benefit from AI acceleration, we still needed to understand the algorithms, the physics, and the system-level constraints well enough to recognize incorrect behavior, subtle bugs, or unrealistic assumptions.
+Even though AI handled a significant portion of the coding, we learned that AI is only effective if the team using it understands what is right and what is wrong. To benefit from AI acceleration, we still needed to understand the algorithms, the physics, and the system-level constraints well enough to recognize incorrect behavior, subtle bugs, or unrealistic assumptions.
 
-This made our hackathon experience not easier, but **more challenging and more valuable**. The AI accelerated implementation, but correctness, validation, and final decisions always remained human responsibilities.
+This made our hackathon experience not easier, but more challenging and more valuable. The AI accelerated implementation, but correctness, validation, and final decisions always remained human responsibilities.
 
 The examples below show how we used AI effectively — including what worked, what failed, and the concrete steps we took to stay fast, correct, and in control.
 
