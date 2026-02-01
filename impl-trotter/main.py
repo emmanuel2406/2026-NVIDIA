@@ -319,8 +319,8 @@ def get_labs_hamiltonian(N):
                     terms_2[tuple(unique)] = terms_2.get(tuple(unique), 0.0) + 1.0
                 elif len(unique) == 4:
                     terms_4[tuple(unique)] = terms_4.get(tuple(unique), 0.0) + 1.0
-    t2_list = [[*k, w] for k, w in terms_2.items()]
-    t4_list = [[*k, w] for k, w in terms_4.items()]
+    t2_list = [list(key) + [weight] for key, weight in terms_2.items()]
+    t4_list = [list(key) + [weight] for key, weight in terms_4.items()]
     return [], t2_list, [], t4_list
 
 
