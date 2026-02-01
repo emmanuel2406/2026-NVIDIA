@@ -19,11 +19,12 @@ import sys
 import time
 from pathlib import Path
 
-# Add tutorial evals to path for eval_util
+# Add tutorial evals and benchmarks dir to path
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 EVALS_DIR = REPO_ROOT / "tutorial_notebook" / "evals"
 sys.path.insert(0, str(EVALS_DIR))
+sys.path.insert(0, str(SCRIPT_DIR))
 
 from eval_util import (
     compute_energy,
@@ -32,6 +33,8 @@ from eval_util import (
     get_expected_optimal_energy,
     normalized_energy_distance,
 )
+
+from plot_utils import plot_normalized_distance_vs_n
 
 ANSWERS_CSV = EVALS_DIR / "answers.csv"
 RESULTS_CSV = SCRIPT_DIR / "results.csv"
@@ -232,6 +235,10 @@ def run_benchmark(n_values: list[int], methods: list[str], results_path: Path) -
         writer.writerows(rows)
 
     print(f"Wrote {len(rows)} rows to {results_path}")
+
+    # Plot normalized_distance vs N (one line per method)
+    plot_path = results_path.with_suffix(".png")
+    plot_normalized_distance_vs_n(results_path, out_path=plot_path)
 
 
 def main():
