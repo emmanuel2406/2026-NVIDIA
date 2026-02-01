@@ -42,7 +42,7 @@ For the trotterization method, we chose to augment the trotterization method pro
 reduction in the scaling base of the problem (theoretically improving from
 classical $O(1.34^N)$ to quantum $O(1.21^N)$). This provides a relative
 exponential speedup over the original method, as fewer Trotter steps are needed
-to generate high-quality "seeds" for the classical solver.
+to generate high-quality "seeds" for the classical solver [4].
 3. **Parallelism:** Since QMF (as an adaptation on Grover Search)'s
 implementation on GPUs is highly parallelizable, we can reduce our reliance on
 the (less parallelizable) Trotterization method. This trading off of speed with
@@ -56,11 +56,11 @@ literature. We have three primary reasons for choosing this approach:
 1. **Circuit Depth Efficiency:** Unlike generic ansatzes, the Counteradiabatic
 (CD) terms suppress transitions to excited states during evolution. This allows
 us to achieve higher fidelity with significantly shallower circuits (fewer
-Trotter steps), which is critical for minimizing noise and simulation overhead.
+Trotter steps), which is critical for minimizing noise and simulation overhead [2,3].
 2. **Scalability:** By using fixed-parameter schedules (rather than variational
-optimization loops), we avoid the "barren plateau" problem and the high
-computational cost of training. This approach has been empirically shown to
-scale better than classical branch-and-bound solvers for the LABS problem [2].
+optimization loops), we avoid the high computational cost of training. This
+approach has been empirically shown to scale better than classical
+branch-and-bound solvers for the LABS problem [1].
 3. **Skill-based:** Our team members have extensive experience with QAOA and are
 familiar with its implementation details thanks to our experience from past
 hackathons.
