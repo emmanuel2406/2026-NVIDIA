@@ -13,11 +13,16 @@ Usage:
     python qe_mts_image_hamiltonian.py [N] [population_size] [max_generations] [shots] [trotter_steps]
     python qe_mts_image_hamiltonian.py 25 100 1000 500 10
 
+    # Multi-N: run for multiple N values and produce energy comparison plots
+    python qe_mts_image_hamiltonian.py --n-values "10,15,20" 100 1000 500 10
+    python qe_mts_image_hamiltonian.py --n-values "10-15" 100 1000 500 10
+
 Based on: "Scaling advantage with quantum-enhanced memetic tabu search for LABS"
 https://arxiv.org/abs/2511.04553
 """
 
 import sys
+import csv
 import os
 import json
 import time
@@ -35,8 +40,11 @@ import matplotlib.pyplot as plt
 # impl-trotter must come before impl-mts so "from main import" resolves to impl-trotter/main.py
 # (which has dcqo_flexible_circuit_v2, get_image_hamiltonian, etc.), not impl-mts/main.py
 _impl_trotter_dir = Path(__file__).resolve().parent
-sys.path.insert(0, str(_impl_trotter_dir.parent / "impl-mts"))
+_repo_root = _impl_trotter_dir.parent
+sys.path.insert(0, str(_repo_root / "impl-mts"))
 sys.path.insert(0, str(_impl_trotter_dir))
+sys.path.insert(0, str(_repo_root / "tutorial_notebook" / "evals"))
+sys.path.insert(0, str(_repo_root / "benchmarks"))
 
 # Import H100-optimized MTS
 try:
@@ -1210,8 +1218,8 @@ def print_final_summary(results: List[BenchmarkResult], config: RunConfig):
         pct = 100 * improvement / random_energy if random_energy > 0 else 0
         print(f"  {r.method_name}: {improvement} energy units ({pct:.1f}%)")
 
-    # Compare quantum methods if we have both
-    if len(results) >= 4:
+    # Compare quantum methods if we have all five
+    if len(results) >= 5:
         mts_energy = results[1].best_energy
         qe_image_energy = results[2].best_energy
         qe_labs_energy = results[3].best_energy
@@ -1223,6 +1231,144 @@ def print_final_summary(results: List[BenchmarkResult], config: RunConfig):
         print(f"  QE-MTS (Image) vs QE-MTS (LABS): {qe_labs_energy - qe_image_energy} energy units")
         print(f"  QE-MTS (Image) vs QE-MTS (LABS OPT): {qe_labs_opt_energy - qe_image_energy} energy units")
     print("=" * 70)
+
+
+# ============================================================================
+# Multi-N Wrapper and Plotting
+# ============================================================================
+
+def run_benchmark_for_config(config: RunConfig, verbose: bool = True) -> List[BenchmarkResult]:
+    """Run all benchmark methods for a single config. Returns list of BenchmarkResult."""
+    import random
+    results = []
+    np.random.seed(config.seed)
+    random.seed(config.seed)
+
+    result_random = benchmark_random_search(config, verbose=verbose)
+    results.append(result_random)
+
+    np.random.seed(config.seed)
+    random.seed(config.seed)
+    result_mts = benchmark_classical_mts(config, verbose=verbose)
+    results.append(result_mts)
+
+    np.random.seed(config.seed)
+    random.seed(config.seed)
+    result_qe_image = benchmark_quantum_enhanced_mts(config, verbose=verbose)
+    results.append(result_qe_image)
+
+    np.random.seed(config.seed)
+    random.seed(config.seed)
+    result_qe_labs = benchmark_quantum_enhanced_mts_labs(config, verbose=verbose)
+    results.append(result_qe_labs)
+
+    np.random.seed(config.seed)
+    random.seed(config.seed)
+    result_qe_opt_labs = benchmark_quantum_enhanced_mts_opt_labs(config, verbose=verbose)
+    results.append(result_qe_opt_labs)
+
+    return results
+
+
+def parse_n_values(spec: str) -> List[int]:
+    """Parse N values from spec: comma-separated (10,15,20) or range (10-20 inclusive)."""
+    spec = spec.strip()
+    values = []
+    for part in spec.replace(",", " ").split():
+        part = part.strip()
+        if "-" in part and part[0].isdigit():
+            toks = part.split("-", 1)
+            if len(toks) == 2 and toks[0].isdigit() and toks[1].isdigit():
+                lo, hi = int(toks[0]), int(toks[1])
+                values.extend(range(lo, hi + 1))
+                continue
+        try:
+            values.append(int(part))
+        except ValueError:
+            pass
+    return sorted(set(values))
+
+
+def run_multi_n(
+    n_values: List[int],
+    population_size: int,
+    max_generations: int,
+    n_shots: int,
+    trotter_steps: int,
+    total_time: float = 2.0,
+    p_combine: float = 0.9,
+    seed: int = 42,
+    output_dir: Path = None,
+    verbose: bool = True,
+) -> Path:
+    """
+    Run QE-MTS benchmarks for multiple N values, aggregate results, and plot energy graphs.
+
+    Returns path to the aggregated CSV.
+    """
+    from eval_util import get_expected_optimal_energy, normalized_energy_distance
+    from plot_utils import plot_energies_bar, plot_normalized_distance_vs_n
+
+    evals_dir = _repo_root / "tutorial_notebook" / "evals"
+    answers_csv = evals_dir / "answers.csv"
+    if not answers_csv.exists():
+        answers_csv = _impl_trotter_dir / "evals" / "answers.csv"
+
+    output_dir = output_dir or (_impl_trotter_dir / "results")
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+    for N in n_values:
+        config = RunConfig(
+            N=N,
+            population_size=population_size,
+            max_generations=max_generations,
+            n_shots=n_shots,
+            trotter_steps=trotter_steps,
+            total_time=total_time,
+            p_combine=p_combine,
+            seed=seed,
+            output_dir=output_dir,
+        )
+        if verbose:
+            print("\n" + "=" * 70)
+            print(f"Running benchmarks for N={N}")
+            print("=" * 70)
+        results = run_benchmark_for_config(config, verbose=verbose)
+        opt_energy = get_expected_optimal_energy(N, answers_csv) if answers_csv.exists() else None
+
+        for r in results:
+            nd = ""
+            if opt_energy is not None and opt_energy > 0:
+                nd_val = normalized_energy_distance(r.best_energy, opt_energy)
+                nd = round(nd_val, 6) if nd_val is not None else ""
+            rows.append({
+                "N": N,
+                "method": r.method_name,
+                "energy": r.best_energy,
+                "optimal_energy": opt_energy if opt_energy is not None else "",
+                "normalized_distance": nd,
+                "time_sec": round(r.total_time_s, 6),
+            })
+        if verbose:
+            save_results(results, config)
+
+    csv_path = output_dir / "qe_mts_multi_n_results.csv"
+    fieldnames = ["N", "method", "energy", "optimal_energy", "normalized_distance", "time_sec"]
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"\n[OUTPUT] Aggregated CSV saved to: {csv_path}")
+
+    energies_plot_path = output_dir / "qe_mts_multi_n_energies.png"
+    plot_energies_bar(csv_path, out_path=energies_plot_path, title_prefix="QE-MTS Energy by method")
+
+    norm_plot_path = output_dir / "qe_mts_multi_n_normalized_distance.png"
+    plot_normalized_distance_vs_n(csv_path, out_path=norm_plot_path, title="Normalized energy distance vs N")
+
+    return csv_path
 
 
 # ============================================================================
@@ -1257,6 +1403,9 @@ def parse_args():
                         help="Output directory for results")
     parser.add_argument("--quiet", "-q", action="store_true",
                         help="Reduce output verbosity")
+    parser.add_argument("--n-values", type=str, default=None,
+                        help="Run for multiple N: comma-separated (10,15,20) or range (10-15). "
+                             "Overrides single N positional arg and produces aggregated energy plots.")
 
     return parser.parse_args()
 
@@ -1271,7 +1420,41 @@ def main():
     import random
     random.seed(args.seed)
 
-    # Create configuration
+    output_dir = Path(args.output_dir)
+
+    # Multi-N mode: run for list of N values and produce aggregated energy plots
+    if args.n_values is not None:
+        n_values = parse_n_values(args.n_values)
+        if not n_values:
+            print("Error: --n-values yielded no valid N values")
+            return []
+        print("=" * 70)
+        print("QUANTUM-ENHANCED MTS: MULTI-N BENCHMARK")
+        print("=" * 70)
+        print(f"N values: {n_values}")
+        print(f"Configuration: pop={args.population_size}, gens={args.max_generations}, "
+              f"shots={args.n_shots}, steps={args.trotter_steps}")
+        if GPU_AVAILABLE:
+            gpu_config = get_config()
+            print(f"GPU: {gpu_config.device_name}")
+        else:
+            print("GPU: Not available (using CPU)")
+        print("=" * 70)
+        run_multi_n(
+            n_values=n_values,
+            population_size=args.population_size,
+            max_generations=args.max_generations,
+            n_shots=args.n_shots,
+            trotter_steps=args.trotter_steps,
+            total_time=args.total_time,
+            p_combine=args.p_combine,
+            seed=args.seed,
+            output_dir=output_dir,
+            verbose=verbose,
+        )
+        return []
+
+    # Single-N mode
     config = RunConfig(
         N=args.N,
         population_size=args.population_size,
@@ -1281,7 +1464,7 @@ def main():
         total_time=args.total_time,
         p_combine=args.p_combine,
         seed=args.seed,
-        output_dir=Path(args.output_dir),
+        output_dir=output_dir,
     )
 
     print("=" * 70)
@@ -1298,39 +1481,7 @@ def main():
 
     print("=" * 70)
 
-    results = []
-
-    # Reset seed before each method for fair comparison
-    np.random.seed(config.seed)
-    random.seed(config.seed)
-
-    # Method 1: Random Search
-    result_random = benchmark_random_search(config, verbose=verbose)
-    results.append(result_random)
-
-    # Method 2: Classical MTS
-    np.random.seed(config.seed)
-    random.seed(config.seed)
-    result_mts = benchmark_classical_mts(config, verbose=verbose)
-    results.append(result_mts)
-
-    # Method 3: Quantum-Enhanced MTS (Image Hamiltonian)
-    np.random.seed(config.seed)
-    random.seed(config.seed)
-    result_qe_image = benchmark_quantum_enhanced_mts(config, verbose=verbose)
-    results.append(result_qe_image)
-
-    # Method 4: Quantum-Enhanced MTS (LABS Hamiltonian)
-    np.random.seed(config.seed)
-    random.seed(config.seed)
-    result_qe_labs = benchmark_quantum_enhanced_mts_labs(config, verbose=verbose)
-    results.append(result_qe_labs)
-    
-    # Method 5: Quantum-Enhanced OPT MTS (LABS Hamiltonian)
-    np.random.seed(config.seed)
-    random.seed(config.seed)
-    result_qe_opt_labs = benchmark_quantum_enhanced_mts_opt_labs(config, verbose=verbose)
-    results.append(result_qe_opt_labs)
+    results = run_benchmark_for_config(config, verbose=verbose)
 
     # Save outputs
     save_results(results, config)
