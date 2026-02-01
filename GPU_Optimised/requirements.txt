@@ -1,0 +1,26 @@
+# Requirements for GPU-Accelerated MTS
+
+# Core dependencies
+numpy>=1.24.0
+matplotlib>=3.7.0
+
+# GPU acceleration (choose based on your CUDA version)
+# For CUDA 12.x (recommended for H100/L4)
+cupy-cuda12x>=12.0.0
+
+# Alternative: For CUDA 11.x
+# cupy-cuda11x>=11.0.0
+
+# Optional: For advanced profiling
+# nvidia-pyindex
+# nvidia-nsight-systems
+# nvtx
+
+# Optional: For multi-GPU utilities
+# mpi4py  # If using MPI for multi-node
+
+# Development dependencies (optional)
+# pytest>=7.0.0
+# pytest-benchmark>=4.0.0
+# black>=23.0.0
+# flake8>=6.0.0
