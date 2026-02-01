@@ -1136,7 +1136,7 @@ def visualize_mts_results(best_s: np.ndarray, best_energy: int,
 SEED=42
 random.seed(SEED)
 np.random.seed(SEED)
-N = 25
+N = 50
 population_size = 50
 max_generations = 100
 
@@ -1651,7 +1651,7 @@ Use your CUDA-Q code to prepare an initial population for your memetic search al
 
 """
 
-N = 15                  # Sequence length
+N = 25                  # Sequence length
 population_size = 50    # Population size for MTS
 max_generations = 20    # Reduced for faster execution (increase for better results)
 n_shots = 200           # Number of quantum samples to generate
