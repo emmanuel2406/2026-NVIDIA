@@ -111,8 +111,7 @@ We:
 This ensured correctness was enforced before performance.
 
 ---
-
-## Additional Example — When We Chose Not to Use AI
+ When We Chose Not to Use AI
 
 ### The situation
 The AI suggested aggressively parallelizing parts of the Memetic Tabu Search control logic on the GPU.
