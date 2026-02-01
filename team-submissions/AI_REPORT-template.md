@@ -9,7 +9,7 @@
   
   We organized our AI agents using a single n8n workflow, which better represents how the system actually runs compared to using separate tools or chat instances. All agents are connected in one executable pipeline rather than working in isolation.
 
-The workflow is managed by an orchestrator agent that handles configuration, run IDs, and execution order. Domain-specific agents (such as QAOA and MTS agents) run their respective code modules. Using this setup, we can directly run all code files across different environments—BERQ, qBraid, or locally—without changing the overall workflow structure.
+The workflow is managed by an orchestrator agent that handles configuration, run IDs, and execution order. Domain-specific agents (such as QAOA and MTS agents) run their respective code modules. Using this setup, we can directly run all code files across different environments—berv, qBraid, or locally—without changing the overall workflow structure.
 
 A verification agent checks the results and branches the workflow into success or failure paths, where summaries, logs, and history are automatically handled.
 
