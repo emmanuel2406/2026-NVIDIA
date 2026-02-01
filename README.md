@@ -1,137 +1,521 @@
-# NVIDIA iQuHACK 2026 Challenge
+# [Your Team Name] - NVIDIA iQuHACK 2026 Challenge Submission
 
-## Overview
+## 🎯 Project Overview
 
-The Low Autocorrelation of Binary Sequences (LABS) problem is a notoriously difficult optimization challenge, critical for high-performance radar and telecommunications.
-
-Your objective is to take the current classical state-of-the-art Memetic Tabu Search (MTS) and evolve it. Rather than jumping to a purely quantum solution, you will engineer a hybrid quantum-enhanced workflow where samples from a quantum algorithm are used to seed the classical MTS population. You must then push the limits of performance by GPU-accelerating both the quantum simulation and the classical search components.
-
-**We want you to vibe code!** 
-
-In modern R&D and this challenge, speed matters, but rigor and coordination matter more. We expect you to employ Agentic Strategies, utilizing AI tools that can reason across your codebase to act as your collaborators while you operate as the Technical Leadership Team. Your collective job is to decompose the problem, delegate tasks across your team and AI agents, and most importantly verify the work. As Leads, you must clearly communicate your planning, workflow, and solution, ensuring your team remains aligned and ready to pivot even as technical challenges shift your strategy.
-
-## Logistics, Milestones, and Evaluation
-
-![LABS Challenge Timeline](images/image-3.png)
-
-In this challenge, you will mimic a real-world R&D pipeline, moving from rapid prototyping to high-performance deployment. Success in this challenge requires clear orchestration; review the section [Assign Your Technical Roles](https://github.com/iQuHACK/2026-NVIDIA/blob/main/LABS-challenge-Phase1.md) in the GitHub repository to define your team's PICs for Project Lead, GPU Acceleration, Quality Assurance, and Technical Marketing. These roles ensure your team remains aligned while managing both human and AI-agent workflows.
-
-During the challenge, you will utilize two distinct platforms, each chosen for a specific phase of your development lifecycle. 
-
-* **Phase 1 (Prototyping): qBraid** | [Specifications](https://github.com/iQuHACK/2026-NVIDIA/blob/main/LABS-challenge-Phase1.md)
-
-    For the "Ramp Up" and initial CPU validation, you will work on Milestones 1 and 2 in [qBraid](https://account-v2.qbraid.com/). qBraid is your "Dev Environment" — a zero-setup, pre-configured cudaq sandbox that allows you to focus entirely on mastering the algorithm and logic without worrying about infrastructure overhead.
-
-    ### Milestones:
-    1. **Ramp Up**: Master the state-of-the-art for LABS via a scaffolded tutorial.
-    
-    2. **Research & Plan**: Perform due diligence to design a custom quantum strategy and acceleration plan.
-
-* **Phase 2 (Acceleration): Brev** | [Specifications](https://github.com/iQuHACK/2026-NVIDIA/blob/main/LABS-challenge-Phase2.md)
-
-    Once your logic is validated, you will "graduate" your code to [Brev](https://brev.nvidia.com/) to complete Milestone 3 and 4. Brev provides on-demand access to a wide variety of NVIDIA GPU architectures (L4s, T4s, A100s, ...). We have provided a pre-configured GPU environment for this environment called a **Launchable**. You will use Brev to test your solution across different hardware configurations and unlock full GPU acceleration.
-
-    ### Milestones: 
-    3. **Build**: Inmplement your algorithm in CUDA-Q and validate it on a CPU in qBraid, then migrate to Brev to deploy full GPU acceleration.
-
-    4. **Showcase and Retrospective**: Present your solution, performance metrics, and your AI-driven workflow.
-
-**Good luck. Let the agents build the code, you build the architecture.**
-
-## Accessing Phase 1 of the Challenge with qBraid
-
-<a href="https://account-v2.qbraid.com/explore/projects/iquhack-nvidia" target="_parent"><img src="https://qbraid-static.s3.amazonaws.com/logos/Launch_on_qBraid_white.png" alt="Launch On qBraid" width="150"/></a>
-
-During the duration of the hackathon, you will have access to the new and improved version of the qBraid platform accessible through here: https://account-v2.qbraid.com/ 
-
-If any issues occur, try deleting cache in your browser and refreshing the page.
-
-### Steps for qBraid Environment Setup:
-
-1. Click the `Launch on qBraid` button above and create an account 
-
-2. Click on the `Launch on Lab` button on the right side of the explore page. This will automatically clone your repository and add the CUDA-Q environment. 
-
-<img align="right" width= "28%" src="images/image.png">
-
-3. Double check that you have `CUDA-Q (v0.13.0)` installed. 
-    * If it's **NOT** installed follow Steps 4-6 
-    * Otherwise, go directly to Step 7
-
-4. Add the CUDA-Q environment by navigating to the ENVS tab in the right sidebar, and click on `+ ADD` 
-
-5. Navigate to `CUDA-Q and GPU Quantum Environments` 
-
-<img align="right" width ="28%" src="images/image-2.png">
-
-6. Install CUDA-Q (v0.13.0)
-
-7. Once installation is complete, open the challenge notebook `01_quantum_enhanced_optimization_LABS.ipynb` under the `tutorial_notebook` directory 
-
-8. In the bottom left corner, make sure the kernel is set to `Python 3 [cuda q-v0.13.0]` 
-
-9. Happy Hacking!
+This repository contains our team's solution for the **NVIDIA iQuHACK 2026 Challenge**, tackling the Low Autocorrelation of Binary Sequences (LABS) optimization problem through a hybrid quantum-classical approach with GPU acceleration.
 
 
-For any questions or additional assistance using qBraid, see the [v2 platform documentation](https://docs.qbraid.com/v2/home/introduction), or reach out to the qBraid team on discord.
+---
+
+## 📋 Table of Contents
+
+1. [Our Approach](#-our-approach)
+2. [Implementation Summary](#-implementation-summary)
+3. [Results & Performance](#-results--performance)
+4. [Repository Navigation](#-repository-navigation)
+5. [Phase 1: Prototyping (qBraid)](#-phase-1-prototyping-qbraid)
+6. [Phase 2: GPU Acceleration (Brev)](#-phase-2-gpu-acceleration-brev)
+7. [AI-Assisted Development Workflow](#-ai-assisted-development-workflow)
+8. [How to Run Our Code](#-how-to-run-our-code)
+9. [Challenges & Solutions](#-challenges--solutions)
+10. [Key Learnings](#-key-learnings)
+11. [Acknowledgments](#-acknowledgments)
+
+---
+
+## 🚀 Our Approach
+
+### Problem Understanding
+
+The LABS problem seeks binary sequences that minimize autocorrelation sidelobes - critical for radar and telecommunications applications. We tackled this NP-hard optimization problem by:
+
+**[Describe your team's high-level strategy]**
+
+Example:
+- ✅ Starting with classical Memetic Tabu Search (MTS) baseline
+- ✅ Implementing QAOA-based quantum enhancement for population seeding
+- ✅ GPU-accelerating both quantum simulation and classical search
+- ✅ Benchmarking across multiple NVIDIA GPU architectures
+
+### Why This Approach?
+
+**[Explain your reasoning for choosing your specific quantum algorithm and hybrid strategy]**
+
+Example:
+- QAOA provides variational flexibility for combinatorial problems
+- Quantum seeding can explore solution space more efficiently than random initialization
+- GPU acceleration critical for scaling to larger sequence lengths
+- Hybrid approach leverages strengths of both quantum and classical computing
+
+---
+
+## 💻 Implementation Summary
+
+### Quantum Algorithm: [Your Choice - QAOA/QMF/Trotter/Custom]
+
+**[Describe your quantum implementation]**
+
+Example structure:
+```
+Circuit Design:
+- [X] qubits for sequence length N
+- [Y] QAOA layers (p-value)
+- Mixer Hamiltonian: [describe]
+- Cost Hamiltonian: [describe]
+
+Parameter Optimization:
+- Optimizer: [e.g., COBYLA, Adam, etc.]
+- Convergence criteria: [describe]
+- Number of iterations: [X]
+```
+
+### Classical Component: MTS Enhancement
+
+**[Describe how you integrated quantum with classical MTS]**
+
+Example:
+- Quantum samples used to initialize top 20% of MTS population
+- Classical refinement through tabu search iterations
+- Hybrid evaluation function combining quantum and classical metrics
+
+### GPU Optimization Strategy
+
+**[Describe your GPU acceleration approach]**
+
+Example:
+- Parallelized quantum circuit simulation using CUDA-Q GPU backend
+- Batch processing of multiple candidate solutions
+- Optimized memory transfers between CPU and GPU
+- Architecture-specific tuning for [L4/T4/A100]
+
+---
+
+## 📊 Results & Performance
+
+### Solution Quality
+
+**Best LABS Solutions Found:**
+
+| Sequence Length | Energy Merit E(s) | Method | Time (seconds) |
+|-----------------|-------------------|--------|----------------|
+| 20              | [value]           | [method] | [time]       |
+| 40              | [value]           | [method] | [time]       |
+| 60              | [value]           | [method] | [time]       |
+| [Your sizes]    | [values]          | [methods] | [times]     |
+
+**[Add comparison to known optimal solutions if available]**
+
+### Performance Benchmarks
+
+#### CPU vs GPU Speedup
+
+| Task | CPU Time | GPU Time (L4) | GPU Time (A100) | Speedup |
+|------|----------|---------------|-----------------|---------|
+| Quantum Circuit Simulation | [X]s | [Y]s | [Z]s | [A]x |
+| MTS Population Update | [X]s | [Y]s | [Z]s | [A]x |
+| Full Hybrid Iteration | [X]s | [Y]s | [Z]s | [A]x |
+
+**[Add your actual performance data]**
+
+#### Scaling Analysis
+
+**[Include graphs or descriptions of how your solution scales with:]**
+- Sequence length
+- Number of QAOA layers
+- GPU architecture
+- Population size
+
+### Key Findings
+
+**[Summarize your main discoveries]**
+
+Example structure:
+1. **Quantum Enhancement Impact:** Quantum-seeded populations converged [X]% faster than random initialization
+2. **GPU Architecture:** A100 provided [Y]x speedup over L4 for [specific task]
+3. **Optimal Configuration:** Best results with [p=? QAOA layers, population size=?, etc.]
+4. **Bottlenecks Identified:** [What limited performance?]
+
+---
+
+## 📁 Repository Navigation
+
+### What We Modified/Created
+
+**Original Challenge Structure:**
+- `tutorial_notebook/` - Challenge introduction and tutorials
+- `impl-mts/` - Base MTS implementation
+- `impl-qaoa/`, `impl-qmf/`, `impl-trotter/` - Example quantum approaches
+
+**Our Team's Additions:**
+
+#### `/team-submissions/[YourTeamName]/`
+Our main deliverables folder containing:
+- **`final_report.pdf`** - Comprehensive project report
+- **`presentation.pdf`** - Final presentation slides
+- **`retrospective.md`** - Team reflection and lessons learned
+- **`deliverables_checklist.md`** - Completed evaluation criteria
+
+#### `/[your-implementation-folder]/`
+**[Point to your main code directory]**
+
+Example:
+```
+/our-hybrid-solution/
+├── quantum_enhanced_mts.py      # Main hybrid algorithm
+├── qaoa_labs_solver.py          # QAOA implementation
+├── gpu_kernels.py               # GPU-optimized functions
+├── benchmarking.py              # Performance evaluation
+├── utils.py                     # Helper functions
+└── README.md                    # Implementation details
+```
+
+#### `/results/[YourTeamName]/`
+Our experimental results:
+- Performance logs
+- Solution quality data
+- Benchmark comparisons
+- Visualization plots
+
+#### `/benchmarks/[YourTeamName]/`
+Benchmarking scripts and outputs:
+- Cross-architecture comparisons
+- Scalability tests
+- Convergence analysis
+
+---
+
+## 🔬 Phase 1: Prototyping (qBraid)
+
+### What We Accomplished
+
+**Milestone 1 - Ramp Up (Completed: [Date])**
+- ✅ Completed tutorial notebook
+- ✅ Understood classical MTS baseline
+- ✅ Familiarized with CUDA-Q syntax and quantum gates
+- ✅ [Other achievements]
+
+**Milestone 2 - Research & Plan (Completed: [Date])**
+- ✅ Literature review on [specific papers/approaches]
+- ✅ Evaluated QAOA vs QMF vs Trotter for LABS
+- ✅ Decided on [chosen approach] because [reasoning]
+- ✅ Designed hybrid workflow architecture
+- ✅ Created development timeline and task assignments
+- ✅ [Other achievements]
+
+### Phase 1 Deliverables
+
+**CPU-Validated Implementation:**
+- File: `[path/to/your/implementation.py]`
+- Validation: `[path/to/test_suite.py]`
+- Results: Successfully found solutions for N=[sizes] on CPU
+
+**Technical Design Document:**
+- File: `team-submissions/[YourTeamName]/technical_design.md`
+- Includes: Algorithm description, architecture diagrams, GPU acceleration plan
+
+---
+
+## ⚡ Phase 2: GPU Acceleration (Brev)
+
+### Migration from qBraid to Brev
+
+**GPU Acceleration PIC:** [Name]
+
+**Migration Steps Completed:**
+1. ✅ Accessed Brev platform with team credits
+2. ✅ Launched NVIDIA GPU environment
+3. ✅ Transferred code from qBraid
+4. ✅ Configured CUDA-Q GPU backend
+5. ✅ Validated functionality on GPU
+
+### GPU Optimization Process
+
+**[Describe what you did to optimize for GPU]**
+
+Example:
+- Profiled code to identify bottlenecks using [tools]
+- Optimized quantum circuit simulation by [specific changes]
+- Parallelized classical MTS components via [approach]
+- Reduced memory overhead through [techniques]
+- Tuned for specific GPU architecture by [methods]
+
+### Multi-Architecture Testing
+
+**GPUs Tested:**
+- [X] NVIDIA L4: [findings]
+- [X] NVIDIA T4: [findings]
+- [X] NVIDIA A100: [findings]
+
+**Optimal Configuration:** [Which GPU worked best for your workload and why]
+
+---
+
+## 🤖 AI-Assisted Development Workflow
+
+### How We "Vibe Coded"
+
+**[Describe your team's AI integration strategy]**
+
+Example structure:
+
+**Tools Used:**
+- [X] Claude AI / ChatGPT / GitHub Copilot for [specific tasks]
+- [X] CODA Platform for [quantum algorithm exploration]
+- [X] [Other tools]
+
+**Agentic Strategies Employed:**
+
+1. **Project Lead Tasks:**
+   - Used AI for: [e.g., documentation generation, project planning]
+   - Prompt example: [share an effective prompt]
+   - Verification approach: [how you checked AI output]
+
+2. **GPU Acceleration Tasks:**
+   - Used AI for: [e.g., kernel optimization, profiling analysis]
+   - Prompt example: [share an effective prompt]
+   - Verification approach: [how you checked AI output]
+
+3. **Quality Assurance Tasks:**
+   - Used AI for: [e.g., test generation, bug detection]
+   - Prompt example: [share an effective prompt]
+   - Verification approach: [how you checked AI output]
+
+4. **Technical Marketing Tasks:**
+   - Used AI for: [e.g., documentation, visualizations]
+   - Prompt example: [share an effective prompt]
+   - Verification approach: [how you checked AI output]
+
+**What Worked Well:**
+- [AI strength 1]
+- [AI strength 2]
+
+**What Required Human Oversight:**
+- [Area requiring verification 1]
+- [Area requiring verification 2]
+
+**Context Management:**
+- Used `skills.md` for [purpose]
+- Employed [context tools/methods]
+- Prompt engineering techniques: [list]
+
+---
+
+## 🛠️ How to Run Our Code
+
+### Prerequisites
+
+```bash
+# Python environment
+python >= 3.9
+
+# Install dependencies
+pip install -r requirements.txt
+
+# CUDA-Q installation (qBraid has this pre-installed)
+# For local setup, follow: https://nvidia.github.io/cuda-quantum/latest/install.html
+```
+
+### Quick Start on qBraid
+
+```bash
+# 1. Open tutorial notebook to understand the problem
+jupyter notebook tutorial_notebook/01_quantum_enhanced_optimization_LABS.ipynb
+
+# 2. Run our implementation
+cd [your-implementation-folder]
+python quantum_enhanced_mts.py --sequence-length 40 --backend cpu
+
+# 3. Run benchmarks
+cd benchmarks/[YourTeamName]
+python run_benchmarks.py
+```
+
+### Running on Brev (GPU)
+
+```bash
+# 1. Ensure you're in Brev environment with GPU access
+nvidia-smi  # Check GPU availability
+
+# 2. Run with GPU acceleration
+cd [your-implementation-folder]
+python quantum_enhanced_mts.py --sequence-length 60 --backend nvidia
+
+# 3. Run GPU benchmarks
+python gpu_benchmarks.py --gpu-type A100
+```
+
+### Reproducing Our Results
+
+```bash
+# Run complete experiment suite
+bash scripts/reproduce_results.sh
+
+# This will:
+# - Generate LABS solutions for multiple sequence lengths
+# - Benchmark CPU vs GPU performance
+# - Create visualization plots
+# - Output results to results/[YourTeamName]/
+```
+
+---
+
+## 🔥 Challenges & Solutions
+
+### Technical Challenges
+
+**Challenge 1: [Describe a major technical challenge]**
+- **Problem:** [What went wrong]
+- **Solution:** [How you solved it]
+- **Lesson:** [What you learned]
+
+**Challenge 2: [Describe another challenge]**
+- **Problem:** [What went wrong]
+- **Solution:** [How you solved it]
+- **Lesson:** [What you learned]
+
+**Challenge 3: [Platform/Environment Issues]**
+- **Problem:** [e.g., qBraid to Brev migration issues]
+- **Solution:** [How you overcame it]
+- **Lesson:** [What you learned]
+
+### Team Coordination Challenges
+
+**[Describe any workflow or coordination challenges]**
+- How you divided work
+- How you maintained alignment
+- How you integrated different components
+
+---
+
+## 📚 Key Learnings
+
+### Technical Insights
+
+**About Quantum Computing:**
+- [Insight 1]
+- [Insight 2]
+- [Insight 3]
+
+**About GPU Programming:**
+- [Insight 1]
+- [Insight 2]
+- [Insight 3]
+
+**About Hybrid Algorithms:**
+- [Insight 1]
+- [Insight 2]
+- [Insight 3]
+
+### Process Insights
+
+**About AI-Assisted Development:**
+- [What worked with AI agents]
+- [What required human expertise]
+- [Best practices discovered]
+
+**About Hackathon Development:**
+- [Time management lessons]
+- [Rapid prototyping techniques]
+- [Verification strategies]
+
+### What We'd Do Differently
+
+**[Reflect on improvements for future work]**
+- If we had more time: [...]
+- Alternative approaches to try: [...]
+- Better optimization strategies: [...]
+
+---
+
+## 🎉 Acknowledgments
+
+### Special Thanks
+
+- **NVIDIA** for designing this incredible challenge and providing GPU resources
+- **MIT iQuISE** for organizing iQuHACK 2026
+- **qBraid** for the seamless development platform
+- **Brev** for GPU infrastructure access
+- **Conductor Quantum** for CODA platform credits
+- **Challenge Mentors:** [Names if you worked with specific mentors]
+- **Our AI Assistants:** For being tireless coding partners 🤖
+
+### Resources That Helped Us
+
+**Most Valuable Resources:**
+- [Specific tutorial/paper/documentation that was crucial]
+- [Another key resource]
+- [Community help or mentor advice]
+
+---
+
+## 🏆 We Really Enjoyed This Hackathon!
+
+**Why This Experience Was Amazing:**
+
+[Share your team's genuine reflections - examples:]
+
+- The two-phase structure taught us real-world R&D workflows
+- GPU access allowed us to see quantum computing at scale
+- AI-assisted development showed us the future of programming
+- Team collaboration under pressure built amazing chemistry
+- Learning from other teams' approaches was inspiring
+- The challenge balanced theory with practical implementation
+
+**Most Memorable Moments:**
+- [Specific achievement or breakthrough]
+- [Funny or challenging moment]
+- [Unexpected learning or insight]
+
+**To Future Participants:**
+- [Advice 1]
+- [Advice 2]
+- [Advice 3]
+
+---
+
+## 📞 Contact & Links
+
+**Team Repository:** [Your fork URL]  
+**Original Challenge:** [iQuHACK/2026-NVIDIA](https://github.com/iQuHACK/2026-NVIDIA)  
+**Event Website:** [MIT iQuHACK 2026](https://iquhack.mit.edu/)
+
+**Team Discord:** [Your team's Discord handles]
+
+---
+
+## 📄 License
+
+This project follows the original challenge repository licensing terms.
+
+---
 
 
-## Accessing Phase 2 of the Challenge with Brev
 
-<a href="https://brev.nvidia.com/launchable/deploy/now?launchableID=env-392R2ank8ts8FywogpAGLsQYqu8" target="_parent"><img src="https://brev-assets.s3.us-west-1.amazonaws.com/nv-lb-dark.svg" width="150"/></a>
+---
 
-Congratulations on finishing the first part of the challenge! 
+**Submission Date:** [Date]  
+**Team Name:** [Your Team Name]  
+**Challenge:** NVIDIA iQuHACK 2026 - LABS Optimization
 
-You will now get to run your code on real GPUs using NVIDIA's Brev Platform. Don't worry, you don't need to pay for anything! Once completing Phase 1 and your logic is validated, we will provide your team with a **$20 Brev coupon code**.
+*"Let the agents build the code, you build the architecture."* ✨
 
-The desginated GPU Acceleration PIC on your team is responsible for majority of the qBraid to Brev migration. Go to the `GPU_PIC_Brev.pdf` document [here](https://github.com/iQuHACK/2026-NVIDIA/blob/main/GPU_PIC_Brev.pdf) and follow the instructions.
+---
 
-For any questions or additional assistance using Brev, see the [Brev Console Reference](https://docs.nvidia.com/brev/latest/console.html) or reach out to the NVIDIA team on discord.
+## ✅ Pre-Submission Checklist
 
-## Submission Instructions and Deadlines
+Before submitting, ensure:
+
+- [ ] All team member names and Discord handles are listed
+- [ ] Repository fork link is included
+- [ ] All code is in the repository and runnable
+- [ ] `team-submissions/[YourTeamName]/` folder contains all deliverables
+- [ ] Results and benchmarks are documented
+- [ ] README describes your approach and findings
+- [ ] AI workflow is documented
+- [ ] Code includes comments and documentation
+- [ ] You've tested that someone else could run your code
+- [ ] Project Lead has DM'd judges on Discord confirming submission
+
+**Good luck! 🚀**
 
 
-> **By 11am eastern time on Sat Jan 31: Team Intent** The Project Lead should fork this repository and share the link along with the team member's discord names with the judges in a DM on discord (do not post to the Discord channel unless you want all the other participants to see your work).  
-
-> **By 10pm eastern on Sat Jan 31, Phase 1 is due.  Submit what you have finished by that point to have your work assessed for access to your team credits.  
-
-> **By 10am eastern on Sun Feb 1, Phase 2 is due.** The Project Lead should ensure that the forked repository contains all of the deliverables and should DM the judges to confirm their project completion.  Judges will use the forked repository for grading. 
-
-Please see the [Deliverables Checklist](/team-submissions/README.md) in the team-submissions folder for more information about the evaluation criteria of each deliverable.
-
-## Resources
-### NVIDIA Jan 30, 2026 Worskhop Presentation
-* [Slide deck](https://github.com/iQuHACK/2026-NVIDIA/blob/main/NVIDIA-presentation-slides-MIT-IQuHack.pdf)
-
-### CUDA-Q    
-
-* If you are new to quantum computing, (e.g., you'd like a review of the definition of a qubit, quantum gates, and quantum circuits), then run through the first two notebooks of the [Quick Start to Quantum Computing](https://github.com/NVIDIA/cuda-q-academic/tree/main/quick-start-to-quantum) series.
-
-* If you have quantum computing background and want a quick visual guide for translating a quantum circuit into a CUDA-Q kernel, check out this [hello world visualization tool](https://nvidia.github.io/cuda-q-academic/quick-start-to-quantum/interactive_widget/cudaq-hello-world.html).  For more in depth coverage of cuda-q syntax and examples, we recommend notebook 1 of the [QAOA for Max Cut series](https://github.com/NVIDIA/cuda-q-academic/tree/main/qaoa-for-max-cut) series as well as the [examples](https://nvidia.github.io/cuda-quantum/latest/using/examples/examples.html) and [applications](https://nvidia.github.io/cuda-quantum/latest/using/applications.html) in the CUDA-Q documentation, in particular the [QAOA example](https://nvidia.github.io/cuda-quantum/latest/applications/python/qaoa.html).  
-
-* If you prefer to learn by watching, you can check out [minutes 30:40-38:28 of this demo](https://www.nvidia.com/en-us/on-demand/session/gtcdc25-dct51159/?playlistId=gtcdc25-quantum-computing-and-hpc&start=1840&end=2308) of description of cudaq kernels, sampling, and getting the state vector or watch [minutes 9:20-19:00 of this demo](https://www.youtube.com/live/DqPC-nlcXKA?si=ualhUnFYjW9BlbQz&t=560).
-
-### CODA
-* Conductor Quantum is providing 100 credits to their [CODA Platform](https://conductorquantum.substack.com/p/coda-natural-language-quantum-computing?utm_campaign=post&utm_medium=web&triedRedirect=true%2B) for the first 100 teams that complete Phase 1 of the NVIDIA challenge!
-
-* CODA [Demo](https://youtu.be/MocBUZlQlmU?si=c2GXTKb1dosla4PW)
-* CODA [MCP](https://pypi.org/project/coda-mcp/)
-
-### Vibe Coding Tips and Resources
-* Implement verification tests as part of your workflow (e.g., [unittests](https://docs.python.org/3/library/unittest.html), [pytest](https://docs.pytest.org/en/stable/)
-
-* Introduce context into your prompting (e.g., [context7](https://context7.com), agent skills (`skills.md`), MCP, etc.)
-
-* Use different [prompting strategies](https://www.promptingguide.ai/techniques)
-
-* Keep prompts short; open up new chats occassionally to avoid the context window getting too large
-* Meta vibe code. Take some pulse checks occassinoally as you're working by feeding your session back into an agent and ask them how you could improve your prompting.
-* [Cursor & The "Vibe" Workflow](https://youware.medium.com/cursor-for-vibe-coding-a-complete-guide-b0863d4a2330)
-* [Responsible AI Coding: Best Practices](https://cloud.google.com/blog/topics/developers-practitioners/five-best-practices-for-using-ai-coding-assistants)
-
-## Accessing Material Post Challenge
-
-Challenge materials can be accessed via https://account-v2.qbraid.com/ or in the coming weeks through https://account.qbraid.com/ once v2 is merged into the main platform.
-Make sure to push your changes on qBraid to your respective repository forks as a backup.
-
-If you completed Phase 2 of the challenge, materials can be accessed via https://brev.nvidia.com/.
