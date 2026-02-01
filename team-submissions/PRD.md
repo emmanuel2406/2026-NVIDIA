@@ -38,9 +38,13 @@ along with more experimental methods.
 For the trotterization method, we chose to augment the trotterization method provided with symmetry-based exploitation and a short run of quantum minimum finding to converge even faster. This approach ensures at least a constant factor speedup over the original method (thanks to the symmetry-based exploitation) and can potentially achieve an exponential speedup over the original method by leveraging the power of quantum minimum finding. We have three primary reasons for choosing this approach:
 
 1. **Speedup:** The symmetry-based exploitation and quantum minimum finding can significantly speed up the trotterization method, ensuring at least a constant factor speedup over the original method with relative surety.
-2. **Exponential Speedup:** By leveraging the power of quantum minimum finding, we can potentially achieve an exponential speedup over the original method, as a few iterations of quantum minimum finding allows for a significant reduction in the number of trotter steps required as we require lower accuracy from our Trotterization method.
-3. **Parallelism:** Since QMF (as an adaptation on Grover Search)'s implementation on GPUs is highly
-parallelizable, we can reduce our reliance on the (less parallelizable)
+2. **Exponential Speedup:** By leveraging Quantum Minimum Finding, we target a
+reduction in the scaling base of the problem (theoretically improving from
+classical $O(1.34^N)$ to quantum $O(1.21^N)$). This provides a relative
+exponential speedup over the original method, as fewer Trotter steps are needed
+to generate high-quality "seeds" for the classical solver.
+3. **Parallelism:** Since QMF (as an adaptation on Grover Search)'s
+implementation on GPUs is highly parallelizable, we can reduce our reliance on the (less parallelizable)
 Trotterization method. This trading off of speed with lower accuracy of should
 give a higher reliance on the classical part consisting of Memetic Tabu Search.
 
@@ -48,14 +52,41 @@ For the QAOA approach, we chose to use fixed-parameter QAOA with a
 contradiabatic ansatz for optimization, along with QMF as seen in prior
 literature. We have three primary reasons for choosing this approach:
 
-1. **Resource Efficiency:** Not only are hardware-efficient ansatzes more resource-efficient, but using an additional contradiabatic term also allows us to reduce the size of the Hamiltonian, which can lead to faster convergence on our ansatz.
-2. **Scalability:** Hardware-efficient ansatzes are more likely to scale well with increasing problem size, which is important for tackling larger instances of the LABS problem.
-3. **Skill-based:** Our team members have extensive experience with QAOA and are familiar with its implementation details thanks to our experience from past hackathons.
+1. **Circuit Depth Efficiency:** Unlike generic ansatzes, the Counteradiabatic (CD) terms suppress transitions to excited states during evolution. This allows us to achieve higher fidelity with significantly shallower circuits (fewer Trotter steps), which is critical for minimizing noise and simulation overhead.
+2. **Scalability:** By using fixed-parameter schedules (rather than variational
+optimization loops), we avoid the "barren plateau" problem and the high
+computational cost of training. This approach has been empirically shown to
+scale better than classical branch-and-bound solvers for the LABS problem [2].
+3. **Skill-based:** Our team members have extensive experience with QAOA and are
+familiar with its implementation details thanks to our experience from past
+hackathons.
+
+We also reviewed the following approaches:
 
 ### Literature Review
-* **Reference:** [Title, Author, Link]
+* **Reference:**  [Evidence of scaling advantage for the quantum approximate optimization algorithm on a classically intractable problem, Shaydulin et al., https://www.science.org/doi/10.1126/sciadv.adm6761]
 * **Relevance:** [How does this paper support your plan?]
-    * *Example:* "Reference: 'QAOA for MaxCut.' Relevance: Although LABS is different from MaxCut, this paper demonstrates how parameter concentration can speed up optimization, which we hope to replicate."
+    This paper serves as the primary justification for our "Fixed Parameter QAOA + QMF" approach. It explicitly demonstrates that while standard QAOA is powerful, the combination of QAOA with Quantum Minimum Finding (QMF) yields the best known empirical scaling for the LABS problem.
+
+* **Reference:** [Digitized-counterdiabatic quantum approximate optimization
+  algorithm, Chandarana et al.,
+  https://journals.aps.org/prresearch/abstract/10.1103/PhysRevResearch.4.013141]
+* **Relevance:** [How does this paper support your plan?]
+  This paper introduces the digitized counterdiabatic quantum approximate
+  optimization algorithm, which is a key component of our approach and provides
+  information on its improvements over standard QAOA. It shows that adding CD
+  terms suppresses transitions to excited states, allowing us to reach
+  high-fidelity solutions with significantly shallower circuits than standard QAOA.
+
+* **Reference:** [Molecular docking via DC-QAOA, NVIDIA Corporation and
+  Affiliates,
+  https://nvidia.github.io/cuda-quantum/latest/applications/python/digitized_counterdiabatic_qaoa.html]
+* **Relevance:** [How does this paper support your plan?]
+  This example provides a CUDAQ implementation of the digitized counterdiabatic QAOA algorithm, which is a key component of our approach.
+
+* **Reference:** [A Quantum Algorithm for Finding the Minimum, Durr and Hoyer, https://arxiv.org/abs/quant-ph/9607014] 
+* **Relevance:** [How does this paper support your plan?]
+  This is the foundational paper for the QMF routine we are using.
 
 ---
 
