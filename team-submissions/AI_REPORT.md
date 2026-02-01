@@ -7,11 +7,13 @@
 <img width="1366" height="259" alt="Screenshot 2026-02-01 at 5 23 43 AM" src="https://github.com/user-attachments/assets/714bcee1-3d54-499d-8f2e-d99639534b07" />
 
  
-This workflow is designed as an end-to-end execution and verification pipeline using n8n. It begins with a manual trigger and a configuration step that defines the execution environment and parameters. The workflow then ensures required directories exist and launches an orchestrator process over SSH, which coordinates the run and outputs a structured JSON description of the task. A unique run directory is created, after which domain-specific agents (such as the quantum seed agent and MTS agent) are executed sequentially via SSH. Once execution completes, a verification agent evaluates the results and writes a verification report, which is parsed to determine whether the run passes or fails.
+This workflow is designed as an end-to-end execution and verification pipeline using n8n. It begins with a manual trigger and a configuration step that defines the execution environment and parameters. The workflow ensures required directories exist and launches an orchestrator process over SSH, which coordinates the run and outputs a structured JSON description of the task. All agent implementations are organized in a dedicated AI-Agents folder, making the system modular and easy to maintain. A unique run directory is created, after which domain-specific agents (such as the quantum seed agent and MTS agent) are executed sequentially via SSH. Once execution completes, a verification agent evaluates the results and writes a verification report, which is parsed to determine whether the run passes or fails.
 
 Based on this verification decision, the workflow branches automatically. If the run passes, key metrics are read, a success summary is generated, and the result is appended to a persistent history log before sending a success notification. If the run fails, logs are collected, a failure summary is built, the failure is recorded in history, and a failure notification is triggered. This design ensures that execution, validation, logging, and reporting are fully automated, reproducible, and environment-agnostic while remaining easy to extend and debug.
 
 For development, we primarily used Claude for coding and implementation, while ChatGPT was used for research, learning core concepts, and reasoning through design decisions. This combination allowed us to move quickly while keeping both the code and the underlying understanding aligned.
+
+More detailed information about the specific AI tools used by us is documented in AGENTS.md
 
 **Verification Strategy:** 
 
