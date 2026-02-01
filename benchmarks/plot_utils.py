@@ -167,3 +167,70 @@ def plot_energies_bar(
     else:
         plt.show()
     plt.close(fig)
+
+
+# QE-MTS method name in CSV -> display label for time plot
+QE_MTS_TIME_LABELS = {
+    "QE-MTS (Image H)": "Custom Ansatz",
+    "QE-MTS (LABS H)": "Nvidia",
+    "QE-MTS (LABS OPT H)": "Our solution",
+}
+
+
+def plot_qe_mts_time_vs_n(
+    csv_path: Path,
+    out_path: Path | None = None,
+    title: str = "QE-MTS run time vs sequence length N",
+) -> None:
+    """
+    Read benchmark CSV and plot N (x-axis) vs time_sec (y-axis) for the three
+    QE-MTS methods only, with custom labels: Custom Ansatz, Nvidia, Our solution.
+
+    Args:
+        csv_path: Path to results CSV (N, method, time_sec, ...).
+        out_path: If set, save figure to this path; otherwise show interactively.
+        title: Plot title.
+    """
+    by_method: dict[str, list[tuple[int, float]]] = {
+        label: [] for label in QE_MTS_TIME_LABELS.values()
+    }
+
+    with open(csv_path, newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            method = row.get("method", "").strip()
+            if method not in QE_MTS_TIME_LABELS:
+                continue
+            try:
+                n_val = int(row["N"])
+                time_val = float(row["time_sec"])
+            except (KeyError, ValueError):
+                continue
+            label = QE_MTS_TIME_LABELS[method]
+            by_method[label].append((n_val, time_val))
+
+    for label in by_method:
+        by_method[label] = sorted(by_method[label], key=lambda x: x[0])
+
+    fig, ax = plt.subplots()
+    for label in ["Custom Ansatz", "Nvidia", "Our solution"]:
+        points = by_method.get(label, [])
+        if not points:
+            continue
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
+        ax.plot(xs, ys, marker="o", markersize=8, label=label, linewidth=2, alpha=0.8)
+
+    ax.set_yscale("log")
+    ax.set_xlabel("N")
+    ax.set_ylabel("Time (seconds)")
+    ax.set_title(title)
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    if out_path:
+        fig.savefig(out_path, dpi=150, bbox_inches="tight")
+        print(f"Saved plot to {out_path}")
+    else:
+        plt.show()
+    plt.close(fig)
