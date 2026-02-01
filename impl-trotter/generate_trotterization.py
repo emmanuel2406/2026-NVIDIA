@@ -291,6 +291,9 @@ def reduce_hamiltonian_skew_symmetry(terms_1, terms_2, terms_3, terms_4, N: int)
     Reduce the N-qubit Hamiltonian to qubits 0..a by substituting Z_i (i > a)
     with (-1)^(i-a) Z_{2a-i}, where a = (N-1)/2 (0-based). Requires N odd.
     Returns (t1_red, t2_red, t3_red, t4_red) with indices only in [0, a].
+    Terms that map to duplicate qubit indices are coalesced (Z_i^2 = I, so
+    duplicate pairs drop or reduce order) so the circuit never sees repeated
+    qubits in a single gate, avoiding cusvsim gate-grouping errors.
     """
     if N % 2 == 0:
         raise ValueError("Skew-symmetry reduction requires odd N")
@@ -307,20 +310,62 @@ def reduce_hamiltonian_skew_symmetry(terms_1, terms_2, terms_3, terms_4, N: int)
     def phase_exponent(indices):
         return sum((idx - a) for idx in indices if idx > a)
 
+    def add_1(i, c):
+        t1_red[i] = t1_red.get(i, 0.0) + c
+
+    def add_2(i, j, c):
+        if i == j:
+            return  # Z_i Z_i = I
+        i, j = min(i, j), max(i, j)
+        key = (i, j)
+        t2_red[key] = t2_red.get(key, 0.0) + c
+
+    def add_3(i, j, k, c):
+        si, sj, sk = sorted([i, j, k])
+        if si == sj == sk:
+            add_1(si, c)  # Z^3 = Z
+        elif si == sj:
+            add_1(sk, c)  # Z_si^2 Z_sk = Z_sk
+        elif sj == sk:
+            add_1(si, c)  # Z_si Z_sj^2 = Z_si
+        else:
+            key = (si, sj, sk)
+            t3_red[key] = t3_red.get(key, 0.0) + c
+
+    def add_4(na, nb, nc, nd, c):
+        s = sorted([na, nb, nc, nd])
+        a4, b4, c4, d4 = s[0], s[1], s[2], s[3]
+        if a4 == b4 == c4 == d4:
+            return  # Z^4 = I
+        if a4 == b4 == c4:
+            add_2(a4, d4, c)  # Z_a^3 Z_d = Z_a Z_d
+        elif b4 == c4 == d4:
+            add_2(a4, b4, c)  # Z_a Z_b^3 = Z_a Z_b
+        elif a4 == b4 and c4 == d4:
+            return  # Z_a^2 Z_c^2 = I
+        elif a4 == b4:
+            add_2(c4, d4, c)  # Z_a^2 Z_c Z_d = Z_c Z_d
+        elif c4 == d4:
+            add_2(a4, b4, c)  # Z_a Z_b Z_c^2 = Z_a Z_b
+        elif b4 == c4:
+            add_2(a4, d4, c)  # Z_a Z_b^2 Z_d = Z_a Z_d
+        else:
+            key = (a4, b4, c4, d4)
+            t4_red[key] = t4_red.get(key, 0.0) + c
+
     for term in terms_1:
         i, w = int(term[0]), term[1]
         exp = phase_exponent([i])
         coeff = ((-1) ** exp) * w
         i_new = map_idx(i)
-        t1_red[i_new] = t1_red.get(i_new, 0.0) + coeff
+        add_1(i_new, coeff)
 
     for term in terms_2:
         i, j, w = int(term[0]), int(term[1]), term[2]
         exp = phase_exponent([i, j])
         coeff = ((-1) ** exp) * w
         i_new, j_new = map_idx(i), map_idx(j)
-        key = (min(i_new, j_new), max(i_new, j_new))
-        t2_red[key] = t2_red.get(key, 0.0) + coeff
+        add_2(i_new, j_new, coeff)
 
     for term in terms_3:
         i, j, k = int(term[0]), int(term[1]), int(term[2])
@@ -328,8 +373,7 @@ def reduce_hamiltonian_skew_symmetry(terms_1, terms_2, terms_3, terms_4, N: int)
         exp = phase_exponent([i, j, k])
         coeff = ((-1) ** exp) * w
         i_new, j_new, k_new = map_idx(i), map_idx(j), map_idx(k)
-        key = tuple(sorted((i_new, j_new, k_new)))
-        t3_red[key] = t3_red.get(key, 0.0) + coeff
+        add_3(i_new, j_new, k_new, coeff)
 
     for term in terms_4:
         qa, qb, qc, qd = int(term[0]), int(term[1]), int(term[2]), int(term[3])
@@ -337,8 +381,7 @@ def reduce_hamiltonian_skew_symmetry(terms_1, terms_2, terms_3, terms_4, N: int)
         exp = phase_exponent([qa, qb, qc, qd])
         coeff = ((-1) ** exp) * w
         na, nb, nc, nd = map_idx(qa), map_idx(qb), map_idx(qc), map_idx(qd)
-        key = tuple(sorted((na, nb, nc, nd)))
-        t4_red[key] = t4_red.get(key, 0.0) + coeff
+        add_4(na, nb, nc, nd, coeff)
 
     t1_list = [[i, float(w)] for i, w in t1_red.items()]
     t2_list = [[i, j, float(w)] for (i, j), w in t2_red.items()]
