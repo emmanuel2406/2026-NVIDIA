@@ -44,6 +44,16 @@ def reversed_sequence(seq: list[int]) -> list[int]:
     return seq[::-1]
 
 
+def odd_flipped_sequence(seq: list[int]) -> list[int]:
+    """Flip only elements at odd indices (1, 3, 5, ...): +1 <-> -1 at those positions."""
+    return [-x if i % 2 == 1 else x for i, x in enumerate(seq)]
+
+
+def even_flipped_sequence(seq: list[int]) -> list[int]:
+    """Flip only elements at even indices (0, 2, 4, ...): +1 <-> -1 at those positions."""
+    return [-x if i % 2 == 0 else x for i, x in enumerate(seq)]
+
+
 # ---------------------------------------------------------------------------
 # Symmetry tests
 # ---------------------------------------------------------------------------
@@ -136,6 +146,50 @@ def test_symmetry_on_answers_csv():
         )
 
 
+def test_odd_flip_symmetry_same_energy():
+    """
+    Odd-flip symmetry: flipping only elements at odd indices (1, 3, 5, ...)
+    yields the same energy.
+
+    For C_k(s) = sum_i s[i]*s[i+k], flipping odd positions preserves the
+    autocorrelation structure (pairs with same parity contribute unchanged;
+    pairs with mixed parity contribute negated, but C_{-k} = C_k for real
+    sequences and the squared sum E = sum_k C_k^2 is preserved).
+    """
+    test_cases = load_test_cases_from_csv()
+    assert test_cases, "No test cases loaded from answers.csv"
+    for N, rl, expected_E in test_cases:
+        seq = runlength_to_sequence(rl)
+        odd_flipped = odd_flipped_sequence(seq)
+        E_orig = compute_energy(seq)
+        E_odd = compute_energy(odd_flipped)
+        assert E_orig == E_odd, (
+            f"N={N} odd-flip symmetry violated for {rl}: "
+            f"E(original)={E_orig} != E(odd-flipped)={E_odd}"
+        )
+
+
+def test_even_flip_symmetry_same_energy():
+    """
+    Even-flip symmetry: flipping only elements at even indices (0, 2, 4, ...)
+    yields the same energy.
+
+    Analogous to odd-flip symmetry: flipping even positions preserves the
+    LABS energy E = sum_k C_k^2.
+    """
+    test_cases = load_test_cases_from_csv()
+    assert test_cases, "No test cases loaded from answers.csv"
+    for N, rl, expected_E in test_cases:
+        seq = runlength_to_sequence(rl)
+        even_flipped = even_flipped_sequence(seq)
+        E_orig = compute_energy(seq)
+        E_even = compute_energy(even_flipped)
+        assert E_orig == E_even, (
+            f"N={N} even-flip symmetry violated for {rl}: "
+            f"E(original)={E_orig} != E(even-flipped)={E_even}"
+        )
+
+
 if __name__ == "__main__":
     if not load_test_cases_from_csv():
         print("answers.csv not found — skipping physics symmetry tests.")
@@ -145,6 +199,8 @@ if __name__ == "__main__":
         ("Complementary symmetry (flip each bit)", test_complementary_symmetry_same_energy),
         ("Reversal symmetry (read backwards)", test_reversal_symmetry_same_energy),
         ("Complementary and reversal combined", test_complementary_and_reversal_combined),
+        ("Odd-flip symmetry (flip indices 1, 3, 5, ...)", test_odd_flip_symmetry_same_energy),
+        ("Even-flip symmetry (flip indices 0, 2, 4, ...)", test_even_flip_symmetry_same_energy),
         ("Symmetry on answers.csv", test_symmetry_on_answers_csv),
     ]
     for name, test_fn in tests:
