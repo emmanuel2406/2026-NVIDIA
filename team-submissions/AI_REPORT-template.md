@@ -40,68 +40,97 @@ The examples below show how we used AI effectively — including what worked, wh
 
 ## Win — AI Saved Us Hours
 
-**What happened**  
-We used an AI coding agent to help implement GPU-accelerated components for both the quantum (CUDA-Q) and classical (Memetic Tabu Search) parts of the system. Writing and debugging these components manually would have taken many hours.
+### What happened
+We used an AI coding agent to help implement GPU-accelerated components for both the quantum (CUDA-Q) and classical (Memetic Tabu Search) parts of the system. These components involved nontrivial parallelism, batching, and memory layout decisions, and writing them from scratch would have taken many hours.
 
-**Why it worked**  
-We did not ask the AI to “solve the problem end-to-end.” Instead, we:
-- scoped tasks narrowly (one file or function at a time),
-- provided explicit constraints (GPU batching, shallow circuits, no unsupported APIs),
-- and gave the AI existing code structure to follow.
+### Why it worked
+We learned early that AI performs best when it is **guided, not trusted blindly**. Instead of asking the AI to solve the entire problem, we:
+- scoped tasks very narrowly (one file or one function at a time),
+- provided explicit constraints (GPU batching only, shallow circuits, no unsupported CUDA-Q APIs),
+- and gave the AI existing code structure and naming conventions to follow.
 
-**Result**  
+This reduced ambiguity and forced the AI to work within the same engineering constraints we were using ourselves.
+
+### Result
 The AI helped us:
-- scaffold CUDA-Q circuits correctly,
-- convert CPU loops into batched GPU operations,
-- and refactor evaluation code efficiently.
+- scaffold CUDA-Q circuits that matched the official API,
+- convert slow CPU loops into batched GPU kernels,
+- and refactor evaluation code without changing correctness.
 
-This saved us multiple hours of development time and allowed us to focus on algorithm design rather than boilerplate.
-
----
-
-##  Learn — Improving Our Prompting Strategy
-
-**Initial issue**  
-Early prompts occasionally caused the AI to suggest APIs or functions that looked plausible but did not exist in CUDA-Q or CuPy.
-
-**What we changed**  
-To reduce hallucinations, we:
-- created a `skills.md` file containing:
-  - CUDA-Q API references,
-  - examples from official NVIDIA documentation,
-  - explicit constraints on unsupported features,
-- pasted error logs and stack traces directly into prompts,
-- required the AI to explain its approach before writing code.
-
-**Outcome**  
-With a bounded knowledge context, the AI’s suggestions became:
-- more conservative,
-- more accurate,
-- easier to integrate.
-
-This shifted the AI from a guessing assistant to a reliable pair programmer.
+This saved us multiple hours of development time and allowed us to focus on algorithmic choices and system design rather than boilerplate implementation.
 
 ---
 
-##  Fail — When AI Hallucinated (and How We Fixed It)
+## Learn — Improving Our Prompting Strategy
 
-**What failed**  
-At one point, the AI proposed a quantum optimization routine that appeared correct but:
-- violated known LABS symmetries,
-- and produced numerically good but physically invalid solutions.
+### Initial issue
+In early iterations, the AI occasionally suggested APIs or helper functions that looked correct but did not actually exist in CUDA-Q or CuPy. These suggestions were syntactically reasonable but failed at runtime.
 
-**How we caught it**  
-We did not trust outputs blindly. We:
-- ran symmetry checks (complement and reversal),
-- compared energies against known golden answers,
-- identified inconsistencies early.
+### What we changed
+Rather than repeatedly correcting the AI, we changed our process:
+  - verified CUDA-Q API references,
+  - examples copied from official NVIDIA documentation,
+  - explicit notes on unsupported features,
+  - pasted compiler errors and stack traces directly into prompts,
+  - required the AI to explain *why* it chose a specific approach before writing code.
 
-**How we fixed it**  
-- Removed the faulty routine,
-- added explicit symmetry unit tests to prevent regressions,
-- updated prompts to require:
-  > “Explain how this approach respects LABS symmetries before coding.”
+This forced the AI to reason within a bounded, verified context.
+
+### Outcome
+After this change:
+- hallucinated APIs almost completely disappeared,
+- suggestions became more conservative and realistic,
+- integration time dropped significantly.
+
+The AI transitioned from a trial-and-error assistant into a reliable pair programmer.
+
+---
+
+## Fail — When AI Hallucinated (and How We Fixed It)
+
+### What failed
+At one point, the AI proposed a quantum optimization routine that appeared mathematically sound and produced low-energy solutions. However:
+- it violated known LABS symmetries,
+- and generated solutions that were numerically good but physically invalid.
+
+This was a subtle failure that would have been easy to miss if we only optimized for energy values.
+
+### How we caught it
+We deliberately built verification into our workflow:
+- ran complement and reversal symmetry tests,
+- compared results against known golden answers from prior literature,
+- monitored consistency across repeated runs.
+
+These checks revealed inconsistencies that flagged the routine as incorrect.
+
+### How we fixed it
+We:
+- removed the faulty routine entirely,
+- added explicit symmetry unit tests so similar errors could not reappear,
 
 
+This ensured correctness was enforced before performance.
 
+---
+
+## Additional Example — When We Chose Not to Use AI
+
+### The situation
+The AI suggested aggressively parallelizing parts of the Memetic Tabu Search control logic on the GPU.
+
+### Why we rejected it
+Although technically feasible, we recognized that:
+- tabu bookkeeping involves complex branching and state,
+- moving it to the GPU would increase implementation risk,
+- and the expected speedup was marginal compared to neighbor evaluation.
+
+### Our decision
+We kept high-level control logic on the CPU and focused GPU acceleration only on the true bottleneck: batched energy and autocorrelation evaluation.
+
+This decision reduced complexity, avoided bugs, and still captured most of the performance gains.
+
+---
+
+### Key takeaway
+Understanding the system well enough to say “no” was just as important as knowing when to say “yes.”
 
