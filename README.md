@@ -1,5 +1,7 @@
 # NVIDIA iQuHACK 2026 Challenge - Team Submission
 
+Update: We won 3rd place.
+
 ## 👥 Our Team
 - **Team Name:** [Harvard Blocheads]
 
